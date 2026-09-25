@@ -1,0 +1,217 @@
+# ==========================================================================
+# AmigoAct — unified .gitignore for BOTH backend (Python/uv) and frontend (Next.js/Bun)
+#
+# Design rules:
+#   1. This is the ONLY .gitignore in the repo. Do not add per-package ones.
+#   2. Never ignore a path that the build, tests, or CI need (e.g. bun.lock, uv.lock).
+#   3. Template/example files are explicitly re-included with `!` rules.
+#   4. Order matters: a `!` re-include must come AFTER the rule it overrides.
+# ==========================================================================
+
+
+# --------------------------------------------------------------------------
+# Operating system
+# --------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+ehthumbs.db
+Thumbs.db
+Thumbs.db:encryptable
+Desktop.ini
+$RECYCLE.BIN/
+
+
+# --------------------------------------------------------------------------
+# Editors & IDEs
+# --------------------------------------------------------------------------
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/settings.local.json.example
+*.swp
+*.swo
+*.swn
+*~
+.\#*
+\#*\#
+
+
+# --------------------------------------------------------------------------
+# Secrets, credentials & environment
+# --------------------------------------------------------------------------
+# Real secrets must never be committed. Examples/templates are allowed.
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_ed25519
+secrets/
+secrets.yaml
+secrets.yml
+!.secrets.example/
+*.netrc
+.netrc
+
+
+# --------------------------------------------------------------------------
+# Python — bytecode & compiled artifacts
+# --------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pyd
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.eggs/
+.installed.cfg
+MANIFEST
+pip-wheel-metadata/
+__pypackages__/
+
+
+# --------------------------------------------------------------------------
+# Python — tooling caches
+# --------------------------------------------------------------------------
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+.pyre/
+.pytype/
+.hypothesis/
+.tox/
+.nox/
+.cache/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+coverage.json
+htmlcov/
+.nyc_output/
+junit*.xml
+.uv-cache/
+pip-wheel-metadata/
+
+
+# --------------------------------------------------------------------------
+# Python — virtual environments
+# --------------------------------------------------------------------------
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.python-version.local
+
+
+# --------------------------------------------------------------------------
+# Python — Jupyter / IPython
+# --------------------------------------------------------------------------
+.ipynb_checkpoints/
+profile_default/
+ipython_config.py
+
+
+# --------------------------------------------------------------------------
+# Node / JavaScript — dependencies & package-manager state
+# --------------------------------------------------------------------------
+# NOTE: lockfiles (bun.lock, package-lock.json, pnpm-lock.yaml) are NOT
+# ignored anywhere in this file, on purpose — they must be committed.
+node_modules/
+.pnpm-store/
+.pnpm/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+.npm/
+.bun-install-cache/
+
+
+# --------------------------------------------------------------------------
+# Next.js
+# --------------------------------------------------------------------------
+.next/
+out/
+next-env.d.ts
+.vercel
+*.tsbuildinfo
+.turbo/
+
+
+# --------------------------------------------------------------------------
+# Build output (generic)
+# --------------------------------------------------------------------------
+/build/
+/out/
+/dist/
+*.tgz
+*.tar.gz
+storybook-static/
+
+
+# --------------------------------------------------------------------------
+# Tests, coverage & test reports
+# --------------------------------------------------------------------------
+coverage/
+*.lcov
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+.vitest-reports/
+/frontend/playwright/.cache/
+
+
+# --------------------------------------------------------------------------
+# Logs
+# --------------------------------------------------------------------------
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+bun-debug.log*
+lerna-debug.log*
+pip-log.txt
+
+
+# --------------------------------------------------------------------------
+# Local agent / editor scratch space
+# --------------------------------------------------------------------------
+# Keep session notes out of the repo, but allow curated docs under docs/.
+.agent/
+.agents/
+CLAUDE.local.md
+AGENTS.local.md

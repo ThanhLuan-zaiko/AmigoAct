@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Câu hỏi hoặc thảo luận
+    url: https://github.com/ThanhLuan-zaiko/AmigoAct/discussions
+    about: Đặt câu hỏi hoặc đưa ra ý tưởng chưa sẵn sàng để triển khai.
+  - name: Báo cáo bảo mật
+    url: https://github.com/ThanhLuan-zaiko/AmigoAct/security/advisories/new
+    about: Báo cáo lỗ hổng riêng tư. Đừng mở issue công khai.

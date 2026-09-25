@@ -1,0 +1,69 @@
+name: Đề xuất tính năng
+description: Đề xuất hành vi mới hoặc thay đổi hành vi hiện có
+title: "feat: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Hãy mô tả kết quả bạn muốn, không phải cách cài đặt. Thảo luận về phần
+        cài đặt nên nằm ở phần bình luận của issue.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Vấn đề
+      description: Hôm nay điều gì khó hoặc không làm được?
+      placeholder: |
+        Tôi không phân biệt được lỗi chào hỏng đến từ kiểm tra dữ liệu hay từ
+        mạng, nên không thể hiện đúng thông báo cho người dùng.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Đề xuất thay đổi
+      description: Lẽ ra phải xảy ra điều gì?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: layer
+    attributes:
+      label: Thuộc tầng nào?
+      options:
+        - Giao diện frontend
+        - API backend
+        - Cả hai / tích hợp
+        - Trải nghiệm nhà phát triển (công cụ, CI, tài liệu)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Thay đổi này có đụng tới hợp đồng công khai hiện có không?
+      description: >
+        Hình dạng response, biến môi trường, lệnh CLI, hoặc quy tắc đã được tài
+        liệu. Thay đổi như vậy cần regression test ở cả hai phía.
+      options:
+        - "Không"
+        - "Có — thêm một field hoặc một endpoint"
+        - "Có — xoá hoặc đổi tên một thứ gì đó"
+        - "Không rõ"
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Những phương án khác bạn đã cân nhắc
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Trước khi gửi
+      options:
+        - label: Tôi đã tìm trong các issue và pull request hiện có
+          required: true

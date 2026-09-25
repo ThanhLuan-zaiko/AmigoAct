@@ -1,0 +1,52 @@
+# Paths to labels. First match wins; keep the list ordered from most specific
+# (e.g. `.tsx`) to least (any source change).
+#
+# Applied by .github/workflows/labeler.yml.
+
+# --- area -------------------------------------------------------------------
+backend:
+  - changed-files:
+      - any-glob-to-any-file: 'backend/**'
+
+frontend:
+  - changed-files:
+      - any-glob-to-any-file: 'frontend/**'
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file: 'docs/**'
+      - any-glob-to-any-file: '*.md'
+
+# --- change type (more specific patterns first) -----------------------------
+tests:
+  - changed-files:
+      - any-glob-to-any-file: '**/tests/**'
+      - any-glob-to-any-file: '**/*.test.*'
+      - any-glob-to-any-file: '**/*.spec.*'
+
+configuration:
+  - changed-files:
+      - any-glob-to-any-file: '**/*.config.*'
+      - any-glob-to-any-file: '.github/**'
+      - any-glob-to-any-file: 'backend/pyproject.toml'
+      - any-glob-to-any-file: 'frontend/biome.json'
+      - any-glob-to-any-file: 'frontend/tsconfig.json'
+      - any-glob-to-any-file: 'frontend/next.config.ts'
+      - any-glob-to-any-file: 'frontend/playwright.config.ts'
+      - any-glob-to-any-file: 'frontend/vitest.config.mts'
+      - any-glob-to-any-file: 'scripts/**'
+      - any-glob-to-any-file: '.gitignore'
+      - any-glob-to-any-file: '.gitattributes'
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file: 'frontend/bun.lock'
+      - any-glob-to-any-file: 'backend/uv.lock'
+
+# --- catch-all --------------------------------------------------------------
+# Any change that touches a source file but matched nothing above.
+source:
+  - changed-files:
+      - any-glob-to-any-file: 'backend/**/*.py'
+      - any-glob-to-any-file: 'frontend/**/*.ts'
+      - any-glob-to-any-file: 'frontend/**/*.tsx'

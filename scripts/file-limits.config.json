@@ -1,0 +1,36 @@
+{
+  "$comment": "Line-count ceilings enforced by scripts/check-file-size.mjs and by the `file-size` CI job. A file that hits its ceiling must be split before more code is added to it.",
+  "limits": {
+    "py": 400,
+    "tsx": 260,
+    "ts": 350
+  },
+  "$commentDirectories": "Directories that are never scanned. Keep this list aligned with the root .gitignore.",
+  "ignoredDirectories": [
+    ".git",
+    ".next",
+    ".venv",
+    ".ruff_cache",
+    ".mypy_cache",
+    ".pytest_cache",
+    "__pycache__",
+    "node_modules",
+    "coverage",
+    "dist",
+    "build",
+    "out",
+    "htmlcov",
+    "test-results",
+    "playwright-report",
+    "blob-report",
+    ".turbo"
+  ],
+  "$commentIgnoreGlobs": "Glob patterns of files that are never checked, in addition to the directory list above.",
+  "ignoreGlobs": [
+    "**/*.d.ts",
+    "**/*.min.js",
+    "**/next-env.d.ts"
+  ],
+  "$commentExemptions": "Paths allowed to exceed their ceiling. Each entry needs a reason and an owner, and should be deleted once the file is split. Keep this list empty in the healthy case.",
+  "exemptions": []
+}

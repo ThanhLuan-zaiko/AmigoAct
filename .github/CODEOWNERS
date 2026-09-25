@@ -1,0 +1,13 @@
+# Every line is owned. Requests for ownership changes go through a PR.
+#
+# Order matters: later patterns win.
+
+*                               @ThanhLuan-zaiko
+
+/backend/                       @ThanhLuan-zaiko
+/frontend/                      @ThanhLuan-zaiko
+/docs/                          @ThanhLuan-zaiko
+/.github/                       @ThanhLuan-zaiko
+/scripts/                       @ThanhLuan-zaiko
+/AGENTS.md                      @ThanhLuan-zaiko
+/CONTRIBUTING.md                @ThanhLuan-zaiko

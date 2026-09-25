@@ -1,0 +1,69 @@
+version: 2
+
+updates:
+  # ---------------------------------------------------------------------------
+  # GitHub Actions — the highest-value updates, and the ones that break CI when
+  # they go stale. Grouped so a batch of patches does not open ten PRs.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns: ["actions/*"]
+      astral:
+        patterns: ["astral-sh/*"]
+      bun:
+        patterns: ["oven-sh/*"]
+      codeql:
+        patterns: ["github/codeql-action/*"]
+      semver-patch:
+        update-types: [minor, patch]
+
+  # ---------------------------------------------------------------------------
+  # Python — uv manages backend/uv.lock.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: uv
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      python-minor:
+        update-types: [minor, patch]
+      python-security:
+        update-types: [major]
+
+  # ---------------------------------------------------------------------------
+  # Node — bun manages frontend/bun.lock.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      # Runtime and framework upgrades arrive together on purpose: a Next.js
+      # minor can require a matching React version.
+      framework:
+        patterns: ["next", "react", "react-dom", "@types/react*", "typescript"]
+      testing:
+        patterns: ["vitest", "@vitest/*", "@playwright/test", "jsdom", "@testing-library/*", "@vitejs/*", "vite-tsconfig-paths"]
+      linting:
+        patterns: ["@biomejs/biome", "tailwindcss", "@tailwindcss/*"]
+      deps-patch:
+        update-types: [patch]

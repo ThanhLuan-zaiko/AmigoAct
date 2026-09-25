@@ -1,0 +1,236 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref — a new push makes the old result moot.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.14"
+  BUN_VERSION: "1.4.2"
+  E2E_PORT: "3100"
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Cheap, fast feedback: run this before anything expensive.
+  # -------------------------------------------------------------------------
+  file-size:
+    name: File size limits
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Check every file
+        run: bun run scripts/check-file-size.mjs
+
+      - name: Check staged files
+        run: bun run scripts/check-file-size.mjs --staged
+
+  # -------------------------------------------------------------------------
+  # Backend: lint, strict types, then the three test layers.
+  # -------------------------------------------------------------------------
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: "backend/uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --all-groups --frozen
+
+      - name: Lint
+        run: uv run ruff check --output-format=github .
+
+      - name: Check formatting
+        run: uv run ruff format --check .
+
+      - name: Type check (strict)
+        run: uv run mypy
+
+      - name: Unit tests
+        run: uv run pytest -m unit -q --no-cov
+
+      - name: Integration tests
+        run: uv run pytest -m integration -q --no-cov
+
+      - name: Regression tests
+        run: uv run pytest -m regression -q --no-cov
+
+      - name: Full suite with coverage gate
+        run: uv run pytest --cov-report=xml --cov-report=lcov
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-coverage
+          path: |
+            backend/coverage.xml
+            backend/coverage.lcov
+          retention-days: 14
+          if-no-files-found: error
+
+  # -------------------------------------------------------------------------
+  # Frontend: format+lint, types, the three vitest layers, then a real build.
+  # -------------------------------------------------------------------------
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Lint and format check
+        run: bun run lint
+
+      - name: Type check
+        run: bun run typecheck
+
+      - name: Unit tests
+        run: bun run test:unit
+
+      - name: Integration tests
+        run: bun run test:integration
+
+      - name: Regression tests
+        run: bun run test:regression
+
+      - name: Full suite with coverage gate
+        run: bun run test:coverage
+
+      - name: Production build
+        run: bun run build
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-coverage
+          path: frontend/coverage
+          retention-days: 14
+          if-no-files-found: error
+
+  # -------------------------------------------------------------------------
+  # End-to-end: a real browser against a production build.
+  # Playwright starts and stops the server itself, so this job builds from a
+  # clean checkout rather than consuming the `frontend` job's output. It is
+  # ordered after `frontend` so a broken build fails fast instead of paying for
+  # a browser download first.
+  # -------------------------------------------------------------------------
+  e2e:
+    name: End-to-end
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [file-size, frontend]
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      CI: "true"
+      PORT: ${{ env.E2E_PORT }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/bun.lock') }}
+          restore-keys: playwright-${{ runner.os }}-
+
+      - name: Install Chromium
+        run: bun run e2e:install
+
+      - name: Run Playwright
+        run: bun run e2e
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: frontend/playwright-report
+          retention-days: 14
+
+      - name: Upload Playwright traces
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-traces
+          path: frontend/test-results
+          retention-days: 7
+
+  # -------------------------------------------------------------------------
+  # Single required check, so branch protection has exactly one rule to set.
+  # -------------------------------------------------------------------------
+  ci-success:
+    name: CI
+    if: ${{ always() }}
+    needs: [file-size, backend, frontend, e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Job results
+        run: |
+          echo "file-size : ${{ needs.file-size.result }}"
+          echo "backend   : ${{ needs.backend.result }}"
+          echo "frontend  : ${{ needs.frontend.result }}"
+          echo "e2e       : ${{ needs.e2e.result }}"
+
+      - name: Fail if any required job did not pass
+        if: >-
+          ${{
+            contains(needs.*.result, 'failure')
+            || contains(needs.*.result, 'cancelled')
+            || contains(needs.*.result, 'skipped')
+          }}
+        run: |
+          echo "::error::At least one required job did not pass."
+          exit 1

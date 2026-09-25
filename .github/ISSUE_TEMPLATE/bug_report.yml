@@ -1,0 +1,83 @@
+name: Báo cáo lỗi
+description: Có thứ gì đó hoạt động khác với đáng lẽ
+title: "fix: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Cảm ơn bạn đã báo. Những bug có giá trị nhất đi kèm một test fail hoặc
+        các bước tái hiện chính xác.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: Điều gì đã xảy ra
+      description: Bạn quan sát được gì, gồm cả thông báo lỗi nếu có?
+      placeholder: |
+        Thẻ chào vẫn hiện "Xin chào, bạn!" sau khi đã nhập tên.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Bạn mong đợi gì
+      description: Lẽ ra phải xảy ra gì?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Các bước tái hiện
+      description: Đánh số, bắt đầu từ một bản checkout sạch.
+      placeholder: |
+        1. cd frontend && bun install
+        2. bun run dev
+        3. Mở http://localhost:3000
+        4. Nhập tên vào ô "Tên của bạn"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: layer
+    attributes:
+      label: Lỗi xảy ra ở đâu?
+      options:
+        - Giao diện frontend
+        - API backend
+        - Tích hợp frontend ↔ backend
+        - Công cụ local (lint, kiểu, build)
+        - CI
+        - Không rõ
+    validations:
+      required: true
+
+  - type: input
+    id: versions
+    attributes:
+      label: Phiên bản
+      description: Kết quả của hai lệnh sau.
+      placeholder: |
+        next: 16.3.6
+        python: 3.14.7
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log hoặc dấu vết
+      description: Output terminal, stack trace, hoặc ảnh chụp màn hình.
+      render: shell
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Trước khi gửi
+      options:
+        - label: Tôi đã tìm trong các issue hiện có về lỗi này
+          required: true
+        - label: Tôi đã loại bỏ bí mật và dữ liệu cá nhân khỏi mọi thứ dán vào
+          required: true
