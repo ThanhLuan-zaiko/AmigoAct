@@ -59,18 +59,55 @@ Practical notes:
 .
 ├── .github/            # CI, templates, automation
 ├── backend/
-│   ├── src/backend/    # domain/ (pure) · api/ (HTTP) · main.py · config.py
+│   ├── src/backend/    # domain/ (pure) · api/ (HTTP) · security.py
+│   │                   # database.py · websocket.py · main.py · config.py
 │   └── tests/          # unit/ · integration/ · regression/
 ├── frontend/
 │   ├── app/            # App Router routes
-│   ├── components/     # client + presentational components
-│   ├── lib/            # framework-free helpers
+│   ├── components/     # client + presentational + <SpeculationRules>
+│   ├── lib/            # framework-free helpers (ws client, speculation builder)
 │   └── tests/          # unit/ · integration/ · regression/ · e2e/
 ├── docs/               # human-facing documentation
 └── scripts/            # check-file-size.mjs + file-limits.config.json
 ```
 
 Layering rule that matters: **`backend/src/backend/domain/` and `frontend/lib/` must stay framework-free.** No `fastapi`, no `next/*`, no React imports. That is what makes them cheap to unit test.
+
+## Architecture backbone
+
+**The Speculation Rules API and WebSocket are the spine of this product.**
+Navigation must feel instant, and live state must push to the client — build
+features on these two primitives instead of adding new fetch/poll paths.
+
+- **Speculation Rules (frontend).** Emit `<script type="speculationrules">`
+  via `frontend/components/speculation-rules.tsx` + the pure builder in
+  `frontend/lib/speculation-rules.ts`. Use `prefetch` liberally for likely
+  next routes, `prerender` sparingly (it runs the target page in a hidden
+  frame). `<Link>` viewport prefetch stays on — the rules complement it.
+- **WebSocket (both ends).** One channel per client at `ws(s)://<api>/api/ws`,
+  envelope `{"type": "<name>", "data": {...}}` in both directions.
+  - Backend: `backend/websocket.py` owns the `ConnectionManager`
+    (`app.state.ws_manager`), the built-in `hello`/`ping`/`error` types, and
+    auth. Extend `_dispatch` — or delegate to a feature module — for new
+    message types; never open a second WS endpoint per feature.
+  - Frontend: `frontend/lib/websocket.ts` `createSocket()` — typed handlers,
+    exponential-backoff reconnect, `wsUrl("/api/ws")` from `lib/config.ts`.
+    Realtime updates ride this socket; do not poll REST for live state.
+
+### Data & auth conventions (backend-owned)
+
+- **Entity ids are UUIDv7**, minted app-side via `backend.domain.ids.new_id`
+  (time-ordered, no sequence round-trip). Store as `RAW(16)` in Oracle via
+  `uuid.bytes` — never auto-increment integers.
+- **Passwords hash with argon2id** — `backend.security.hash_password` /
+  `verify_password` (RFC 9106 profile). Plaintext passwords never touch the
+  DB or logs.
+- **Auth is JWT bearer, issued and verified only by the backend** —
+  `security.create_access_token` / `decode_access_token` signed with
+  `AMIGOACT_JWT_SECRET` (env-only, no default; helpers raise when unset).
+  The WebSocket handshake carries the token as `?token=` because browsers
+  cannot set headers on it. The frontend stores no secrets and never
+  verifies tokens — it only attaches them.
 
 ## Commands
 
