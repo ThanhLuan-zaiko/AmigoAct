@@ -41,7 +41,7 @@ def verify_password(password_hash: str, password: str) -> bool:
     """
     try:
         return _HASHER.verify(password_hash, password)
-    except (VerifyMismatchError, VerificationError, InvalidHashError):
+    except VerifyMismatchError, VerificationError, InvalidHashError:
         return False
 
 

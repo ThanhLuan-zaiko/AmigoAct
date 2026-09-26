@@ -81,3 +81,60 @@ class TestSendAndBroadcast:
 
         assert alive.sent == [{"type": "announce"}]
         assert manager.size == 1  # the dead socket was pruned
+
+
+class TestUserIndexAndSendToUsers:
+    """Subject-keyed fan-out: events reach a user on every open socket."""
+
+    def test_send_to_users_reaches_all_sockets_of_that_user(self) -> None:
+        manager = ConnectionManager()
+        tab_one, tab_two, other = FakeWebSocket(), FakeWebSocket(), FakeWebSocket()
+        asyncio.run(manager.connect(tab_one, subject="user-1"))  # type: ignore[arg-type]
+        asyncio.run(manager.connect(tab_two, subject="user-1"))  # type: ignore[arg-type]
+        asyncio.run(manager.connect(other, subject="user-2"))  # type: ignore[arg-type]
+
+        asyncio.run(manager.send_to_users(["user-1"], {"type": "checkin.recorded"}))
+
+        assert tab_one.sent == [{"type": "checkin.recorded"}]
+        assert tab_two.sent == [{"type": "checkin.recorded"}]
+        assert other.sent == []
+
+    def test_send_to_users_skips_unknown_users(self) -> None:
+        manager, socket = ConnectionManager(), FakeWebSocket()
+        asyncio.run(manager.connect(socket, subject="user-1"))  # type: ignore[arg-type]
+
+        asyncio.run(manager.send_to_users(["ghost"], {"type": "x"}))
+
+        assert socket.sent == []
+
+    def test_send_to_users_prunes_dead_sockets(self) -> None:
+        manager = ConnectionManager()
+        alive, dead = FakeWebSocket(), FakeWebSocket()
+        dead.fail_send = True
+        asyncio.run(manager.connect(alive, subject="user-1"))  # type: ignore[arg-type]
+        asyncio.run(manager.connect(dead, subject="user-1"))  # type: ignore[arg-type]
+
+        asyncio.run(manager.send_to_users(["user-1"], {"type": "x"}))
+
+        assert alive.sent == [{"type": "x"}]
+        assert manager.size == 1  # dead socket dropped from both indexes
+
+    def test_disconnect_cleans_the_user_index(self) -> None:
+        manager, socket = ConnectionManager(), FakeWebSocket()
+        connection_id = asyncio.run(
+            manager.connect(socket, subject="user-1")  # type: ignore[arg-type]
+        )
+
+        manager.disconnect(connection_id)
+        asyncio.run(manager.send_to_users(["user-1"], {"type": "x"}))
+
+        assert socket.sent == []
+        assert "user-1" not in manager._by_user
+
+    def test_anonymous_sockets_are_not_user_indexed(self) -> None:
+        manager, socket = ConnectionManager(), FakeWebSocket()
+        asyncio.run(manager.connect(socket))  # type: ignore[arg-type]  # no subject
+
+        asyncio.run(manager.send_to_users(["user-1"], {"type": "x"}))
+
+        assert socket.sent == []

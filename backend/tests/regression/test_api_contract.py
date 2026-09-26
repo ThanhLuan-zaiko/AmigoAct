@@ -9,12 +9,16 @@ Layer: **regression**
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
 pytestmark = pytest.mark.regression
+
+RegisterFn = Callable[[str, str, str], tuple[dict[str, str], dict[str, Any]]]
 
 HEALTH_KEYS = {"status", "app", "version", "environment"}
 READINESS_KEYS = {"status"}
@@ -55,10 +59,44 @@ class TestOpenApiSurface:
     def test_expected_paths_are_registered(self, client: TestClient) -> None:
         paths: set[str] = set(client.get("/openapi.json").json()["paths"])
 
+        # Intentional contract change: Phase 2 added the org/activity/
+        # registration surface (see routers/{orgs,activities,registrations}.
+        # py). Phase 3 added volunteer records, PDF certificates, and org
+        # reporting (see routers/{records,reports}.py). Phase 1 added the
+        # three /api/auth/* endpoints.
         assert paths == {
             "/api/health",
             "/api/health/ready",
             "/api/greeting",
+            "/api/auth/register",
+            "/api/auth/login",
+            "/api/auth/me",
+            "/api/orgs",
+            "/api/orgs/join",
+            "/api/orgs/{org_id}",
+            "/api/orgs/{org_id}/members",
+            "/api/orgs/{org_id}/members/me",
+            "/api/orgs/{org_id}/members/{member_id}",
+            "/api/orgs/{org_id}/activities",
+            "/api/activities/{activity_id}",
+            "/api/activities/{activity_id}/publish",
+            "/api/activities/{activity_id}/cancel",
+            "/api/activities/{activity_id}/complete",
+            "/api/activities/{activity_id}/checkin-code",
+            "/api/activities/{activity_id}/checkin",
+            "/api/activities/{activity_id}/registrations",
+            "/api/activities/{activity_id}/register",
+            "/api/registrations/{registration_id}/cancel",
+            "/api/registrations/{registration_id}/review",
+            "/api/registrations/{registration_id}/checkin",
+            "/api/me/feed",
+            "/api/me/registrations",
+            "/api/me/records",
+            "/api/orgs/{org_id}/members/{member_id}/records",
+            "/api/records/{record_id}",
+            "/api/records/{record_id}/certificate",
+            "/api/orgs/{org_id}/reports/overview",
+            "/api/orgs/{org_id}/reports/activities",
             "/version",
         }
 
@@ -94,3 +132,52 @@ class TestErrorEnvelope:
 
         assert list(payload) == ["detail"]
         assert isinstance(payload["detail"], str)
+
+
+class TestCertificateResponseContract:
+    """The certificate download is a PDF attachment, never cached.
+
+    Clients rely on the exact ``Content-Disposition`` filename pattern and
+    the ``private, no-store`` cache directive — loosening either is a
+    product decision, not a refactor.
+    """
+
+    def test_certificate_headers_are_stable(
+        self, db_client: TestClient, auth_headers: RegisterFn
+    ) -> None:
+        admin, _admin_user = auth_headers("cert-admin@example.edu", "correct-horse", "Quản trị")
+        student, _student_user = auth_headers(
+            "cert-student@example.edu", "correct-horse", "Sinh Viên"
+        )
+        org = db_client.post(
+            "/api/orgs", headers=admin, json={"code": "CERT1", "name": "Đoàn trường"}
+        ).json()["org"]
+        membership = db_client.post(
+            "/api/orgs/join", headers=student, json={"code": "CERT1"}
+        ).json()["membership"]
+        starts = datetime.now(UTC) + timedelta(days=1)
+        activity = db_client.post(
+            f"/api/orgs/{org['id']}/activities",
+            headers=admin,
+            json={
+                "title": "Đợt tình nguyện",
+                "starts_at": starts.isoformat(),
+                "ends_at": (starts + timedelta(hours=2)).isoformat(),
+            },
+        ).json()["activity"]
+        record = db_client.post(
+            f"/api/orgs/{org['id']}/members/{membership['member_id']}/records",
+            headers=admin,
+            json={"title": "Đợt tình nguyện", "activity_id": activity["id"]},
+        ).json()["record"]
+
+        response = db_client.get(f"/api/records/{record['id']}/certificate", headers=student)
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/pdf"
+        assert (
+            response.headers["content-disposition"]
+            == f'attachment; filename="chung-nhan-{record["id"]}.pdf"'
+        )
+        assert response.headers["cache-control"] == "private, no-store"
+        assert response.content.startswith(b"%PDF")

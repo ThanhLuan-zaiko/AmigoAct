@@ -34,7 +34,7 @@ Vietnamese-language product. Mechanical rule, no judgement:
 ## Repository layout
 
 ```
-backend/src/backend/  # domain/ (pure) · api/ (HTTP) · security.py · database.py · websocket.py · main.py · config.py
+backend/src/backend/  # domain/ (pure) · db/ (ORM) · services/ (DB ops) · api/ (HTTP) · security.py · database.py · websocket.py · main.py · config.py
 backend/tests/        # unit/ · integration/ · regression/
 frontend/app/         # App Router routes
 frontend/components/  # incl. <SpeculationRules>

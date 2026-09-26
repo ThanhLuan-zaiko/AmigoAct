@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from typing import Annotated
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -68,6 +69,23 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_ttl_seconds: int = 3600
     jwt_issuer: str = "amigoact"
+
+    # Business timezone: an IANA name deciding which calendar date a moment
+    # falls on (volunteer_records.awarded_on, certificates). All timestamps
+    # are stored in UTC; this is only the local-date lens. The ``tzdata``
+    # package supplies the IANA database on Windows, which has none.
+    timezone: str = "Asia/Ho_Chi_Minh"
+
+    @field_validator("timezone")
+    @classmethod
+    def _timezone_must_be_iana(cls, value: str) -> str:
+        """Reject anything :class:`zoneinfo.ZoneInfo` cannot resolve."""
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            msg = f"unknown IANA timezone: {value!r}"
+            raise ValueError(msg) from exc
+        return value
 
     @field_validator("*", mode="before")
     @classmethod

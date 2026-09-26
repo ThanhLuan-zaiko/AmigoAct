@@ -8,22 +8,29 @@ requires-python = ">=3.14"
 dependencies = [
     "argon2-cffi>=25.1.0",
     "fastapi>=0.121",
+    "fonttools>=4.65,<4.66",
+    "fpdf2==2.8.5",
     "oracledb>=26.0.1",
     "pydantic>=2.11",
     "pydantic-settings>=2.10",
     "pyjwt>=2.15.0",
+    "sqlalchemy[asyncio]>=2.0.54,<2.1",
+    "tzdata>=2026.4",
     "uvicorn[standard]>=0.38",
 ]
 
 [dependency-groups]
 dev = [
+    "aiosqlite>=0.22.1",
     # NOTE: starlette >=1.7 deprecates `httpx` for its TestClient in favour of
     # `httpx2`. We follow the deprecation and filter any residual warning.
     "httpx2>=0.1",
     "mypy>=1.18",
+    "pypdf==6.19.0",
     "pytest>=8.4",
     "pytest-cov>=6.2",
     "ruff>=0.14",
+    "types-fpdf2>=2.8.4.20260724",
 ]
 
 [build-system]
@@ -79,6 +86,17 @@ ignore = [
 ]
 # `__init__.py` files are self-documenting by their module docstring only.
 "src/backend/__init__.py" = ["D104"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI dependencies are declared via callables in signature defaults;
+# they are evaluated per-request by the framework, so B008 must not fire.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Path",
+    "fastapi.Query",
+    "fastapi.Security",
+    "fastapi.Header",
+]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

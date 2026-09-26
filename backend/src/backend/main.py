@@ -16,10 +16,21 @@ import oracledb
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from backend.api.routers import health
+from backend.api.errors import register_error_handlers
+from backend.api.routers import (
+    activities,
+    auth,
+    health,
+    orgs,
+    records,
+    registrations,
+    reports,
+)
 from backend.config import get_settings
-from backend.database import build_dsn, create_pool, verify_pool
+from backend.database import build_dsn, create_engine_for_pool, create_pool, verify_pool
+from backend.db.session import create_sessionmaker
 from backend.websocket import ConnectionManager
 from backend.websocket import router as ws_router
 
@@ -55,6 +66,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.settings = settings
 
     pool: oracledb.AsyncConnectionPool | None = None
+    engine: AsyncEngine | None = None
+    sessionmaker: async_sessionmaker[AsyncSession] | None = None
     if settings.db_enabled:
         dsn = build_dsn(settings)
         logger.info("connecting to Oracle at %s as %s", dsn, settings.db_user)
@@ -65,10 +78,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await pool.close(force=True)
             logger.error("Oracle connection failed: %s", _error_summary(exc))
             raise
+        # The ORM engine shares the oracledb pool (async_creator=acquire),
+        # so sessions and raw checkouts draw from the same connections.
+        engine = create_engine_for_pool(pool)
+        sessionmaker = create_sessionmaker(engine)
         logger.info("Oracle connection verified: %s", dsn)
     else:
         logger.warning("Oracle disabled (AMIGOACT_DB_ENABLED=false)")
     app.state.db_pool = pool
+    app.state.db_engine = engine
+    app.state.db_sessionmaker = sessionmaker
     app.state.ws_manager = ConnectionManager()
 
     app.state.ready = True
@@ -76,6 +95,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         app.state.ready = False
+        if engine is not None:
+            await engine.dispose()
         if pool is not None:
             await pool.close(force=True)
 
@@ -102,7 +123,15 @@ def create_app() -> FastAPI:
         )
 
     application.include_router(health.router, prefix=settings.api_prefix)
+    application.include_router(auth.router, prefix=settings.api_prefix)
+    application.include_router(orgs.router, prefix=settings.api_prefix)
+    application.include_router(activities.router, prefix=settings.api_prefix)
+    application.include_router(registrations.router, prefix=settings.api_prefix)
+    application.include_router(records.router, prefix=settings.api_prefix)
+    application.include_router(reports.router, prefix=settings.api_prefix)
     application.include_router(ws_router, prefix=settings.api_prefix)
+
+    register_error_handlers(application)
 
     @application.exception_handler(ValueError)
     async def value_error_handler(_request: Request, exc: ValueError) -> JSONResponse:

@@ -177,6 +177,8 @@ ALTER TABLE organizations
 -- Lifecycle: draft -> published -> completed (or cancelled at any point).
 -- points is the default award a completed participation earns (điểm rèn
 -- luyện / công tác xã hội); the recorded award may differ per member.
+-- hours is the default volunteer-time credit (giờ tình nguyện) a completed
+-- participation earns; volunteer_records.hours stores the recorded value.
 -- checkin_code is the short code (QR/typing) managers publish for điểm danh.
 -- =============================================================================
 CREATE TABLE activities (
@@ -188,6 +190,7 @@ CREATE TABLE activities (
     status                 VARCHAR2(20 CHAR) DEFAULT 'draft' NOT NULL,
     capacity               NUMBER(8),                        -- NULL = unlimited
     points                 NUMBER(6,2) DEFAULT 0      NOT NULL,
+    hours                  NUMBER(6,2) DEFAULT 0      NOT NULL,
     poster_image_id        RAW(16),
     registration_opens_at  TIMESTAMP WITH TIME ZONE,
     registration_closes_at TIMESTAMP WITH TIME ZONE,
@@ -208,6 +211,7 @@ CREATE TABLE activities (
                                                     'cancelled', 'completed')),
     CONSTRAINT ck_activities_capacity CHECK (capacity IS NULL OR capacity > 0),
     CONSTRAINT ck_activities_points   CHECK (points >= 0),
+    CONSTRAINT ck_activities_hours    CHECK (hours >= 0),
     CONSTRAINT ck_activities_window   CHECK (ends_at > starts_at),
     CONSTRAINT ck_activities_reg_win  CHECK (registration_opens_at  IS NULL
                                           OR registration_closes_at IS NULL

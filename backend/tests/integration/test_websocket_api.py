@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable
+from typing import cast
 
 import pytest
 from fastapi import FastAPI
@@ -109,3 +110,22 @@ class TestAuthenticatedChannel:
             hello = socket.receive_json()
 
         assert hello["data"]["subject"] == "user-uuid-7"
+
+    def test_authenticated_socket_is_indexed_by_subject(
+        self, build_client: Callable[..., TestClient]
+    ) -> None:
+        """The manager's user index is what domain-event pushes target."""
+        token = create_access_token("user-uuid-7", Settings(jwt_secret=WS_SECRET))
+
+        with (
+            build_client(jwt_secret=WS_SECRET) as client,
+            client.websocket_connect(f"{WS_URL}?token={token}") as socket,
+        ):
+            socket.receive_json()  # hello
+            app = cast(FastAPI, client.app)
+            manager = app.state.ws_manager
+            assert "user-uuid-7" in manager._by_user
+
+        # Disconnect must clean both indexes.
+        assert "user-uuid-7" not in manager._by_user
+        assert manager.size == 0

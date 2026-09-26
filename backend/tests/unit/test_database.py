@@ -1,7 +1,7 @@
-"""Unit tests for the database pool lifecycle and ``get_db_connection``.
+"""Unit tests for the database pool/engine lifecycle and ``get_session``.
 
-No test here touches a real listener — ``oracledb`` is replaced by fakes that
-record what the lifecycle did to them.
+No test here touches a real listener — ``oracledb`` and the SQLAlchemy
+engine are replaced by fakes that record what the lifecycle did to them.
 
 Layer: **unit**
 """
@@ -13,16 +13,24 @@ import logging
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import oracledb
+import pydantic
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from backend import main
 from backend.config import Settings, reset_settings_cache
-from backend.database import build_dsn, create_pool, get_db_connection
+from backend.database import (
+    _pin_utc_session,
+    build_dsn,
+    create_engine_for_pool,
+    create_pool,
+    get_session,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -66,11 +74,38 @@ class FakePool:
         self.closed_with.append(force)
 
 
-def _enable_db(monkeypatch: pytest.MonkeyPatch, pool: FakePool) -> None:
-    """Re-enable the DB path that conftest disables, with a fake pool."""
+class FakeSessionMaker:
+    """Async-context-manager factory standing in for ``async_sessionmaker``."""
+
+    def __init__(self, session: object) -> None:
+        self.session = session
+        self.made = 0
+
+    def __call__(self) -> FakeSessionMaker:
+        self.made += 1
+        return self
+
+    async def __aenter__(self) -> object:
+        return self.session
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        return None
+
+
+def _enable_db(monkeypatch: pytest.MonkeyPatch, pool: FakePool) -> MagicMock:
+    """Re-enable the DB path that conftest disables, with fakes.
+
+    ``create_engine_for_pool`` is replaced by a mock returning a fake
+    engine so the lifespan never builds a real SQLAlchemy engine (and so
+    ``dispose`` can be asserted). Returns the fake engine.
+    """
+    engine = MagicMock(spec=AsyncEngine)
+    engine.dispose = AsyncMock()
     monkeypatch.setattr(main, "create_pool", lambda _settings: pool)
+    monkeypatch.setattr(main, "create_engine_for_pool", lambda _pool: engine)
     monkeypatch.setenv("AMIGOACT_DB_ENABLED", "true")
     reset_settings_cache()
+    return engine
 
 
 class TestBuildDsn:
@@ -99,7 +134,39 @@ class TestCreatePool:
             min=1,
             max=4,
             increment=1,
+            session_callback=_pin_utc_session,
         )
+
+
+class TestPinUtcSession:
+    """Every fresh pooled session is pinned to UTC so naive binds read as UTC."""
+
+    def test_alters_session_time_zone(self) -> None:
+        executed: list[str] = []
+
+        class _Cursor:
+            async def execute(self, sql: str) -> None:
+                executed.append(sql)
+
+            def close(self) -> None:
+                pass
+
+        connection: Any = SimpleNamespace(cursor=lambda: _Cursor())
+
+        asyncio.run(_pin_utc_session(connection, None))
+
+        assert executed == ["ALTER SESSION SET TIME_ZONE = '+00:00'"]
+
+
+class TestCreateEngineForPool:
+    """The SQLAlchemy engine wraps the oracledb pool without connecting."""
+
+    def test_returns_an_async_engine(self) -> None:
+        pool: Any = FakePool()
+
+        engine = create_engine_for_pool(pool)
+
+        assert isinstance(engine, AsyncEngine)
 
 
 class TestLifespanPool:
@@ -109,22 +176,27 @@ class TestLifespanPool:
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
     ) -> None:
         pool = FakePool()
-        _enable_db(monkeypatch, pool)
+        engine = _enable_db(monkeypatch, pool)
         app = main.create_app()
 
         with caplog.at_level(logging.INFO, logger="backend"), TestClient(app):
             assert app.state.db_pool is pool
+            assert app.state.db_engine is engine
+            assert app.state.db_sessionmaker is not None
             assert pool.acquires == 1  # startup verification acquired + pinged
             assert pool.connection.pings == 1
 
         assert pool.closed_with == [True]
+        assert engine.dispose.await_count == 1
         assert "Oracle connection verified" in caplog.text
 
-    def test_disabled_db_leaves_pool_none(
+    def test_disabled_db_leaves_pool_and_sessionmaker_none(
         self, app: FastAPI, caplog: pytest.LogCaptureFixture
     ) -> None:
         with caplog.at_level(logging.WARNING, logger="backend"), TestClient(app):
             assert app.state.db_pool is None
+            assert app.state.db_engine is None
+            assert app.state.db_sessionmaker is None
 
         assert "Oracle disabled" in caplog.text
 
@@ -169,27 +241,28 @@ class TestErrorSummary:
         assert main._error_summary(RuntimeError()) == "RuntimeError"
 
 
-class TestGetDbConnection:
-    """The request-scoped dependency that routers will use."""
+class TestGetSession:
+    """The request-scoped dependency that routers use."""
 
-    def test_raises_when_pool_is_missing(self) -> None:
-        request = _request_with_pool(None)
+    def test_raises_when_sessionmaker_is_missing(self) -> None:
+        request = _request_with_sessionmaker(None)
 
-        with pytest.raises(RuntimeError, match="pool is unavailable"):
-            asyncio.run(_drain(get_db_connection(request)))
+        with pytest.raises(RuntimeError, match="session factory is unavailable"):
+            asyncio.run(_drain(get_session(request)))
 
-    def test_yields_an_acquired_connection(self) -> None:
-        pool = FakePool()
-        request = _request_with_pool(pool)
+    def test_yields_a_session_from_the_factory(self) -> None:
+        session = object()
+        maker = FakeSessionMaker(session)
+        request = _request_with_sessionmaker(maker)
 
-        connections = asyncio.run(_collect(get_db_connection(request)))
+        sessions = asyncio.run(_collect(get_session(request)))
 
-        assert connections == [pool.connection]
-        assert pool.acquires == 1
+        assert sessions == [session]
+        assert maker.made == 1
 
 
-def _request_with_pool(pool: object) -> Any:
-    app = SimpleNamespace(state=SimpleNamespace(db_pool=pool))
+def _request_with_sessionmaker(maker: object) -> Any:
+    app = SimpleNamespace(state=SimpleNamespace(db_sessionmaker=maker))
     return SimpleNamespace(app=app)
 
 
@@ -219,3 +292,15 @@ class TestBlankEnvValues:
         monkeypatch.setenv("AMIGOACT_DB_PORT", "1530")
 
         assert Settings().db_port == 1530
+
+    def test_timezone_default_and_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        assert Settings().timezone == "Asia/Ho_Chi_Minh"
+
+        monkeypatch.setenv("AMIGOACT_TIMEZONE", "UTC")
+        assert Settings().timezone == "UTC"
+
+    def test_bad_timezone_is_rejected(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("AMIGOACT_TIMEZONE", "Not/AZone")
+
+        with pytest.raises(pydantic.ValidationError):
+            Settings()
