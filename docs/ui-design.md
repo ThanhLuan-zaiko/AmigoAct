@@ -27,7 +27,12 @@ Tài liệu này là luật bắt buộc cho mọi màn hình của AmigoAct.
   - Khởi tạo: đọc `localStorage` trước, nếu chưa có thì đọc `matchMedia("(prefers-color-scheme: dark)")`.
   - Gắn/gỡ class `dark` trên `<html>`, lắng nghe đổi `prefers-color-scheme` khi người dùng chưa chọn thủ công.
   - Thêm `suppressHydrationWarning` trên `<html>` trong `app/layout.tsx` để tránh lệch SSR/lần render đầu.
-- `ThemeToggle` là nút có `aria-label` tiếng Việt (ví dụ `"Chuyển sang giao diện tối"`), icon mặt trời/mặt trăng từ `react-icons`, đặt ở vị trí cố định (thường là header).
+- Theme được áp **trước lần paint đầu** bằng script inline (`THEME_BOOTSTRAP`
+  trong `app/layout.tsx`, render qua `components/inline-script.tsx`) để không
+  có flash sai theme. Key `localStorage` trong script là literal — giữ nó đồng
+  bộ với `THEME_STORAGE_KEY` trong `lib/theme.ts` vì script chạy trước khi
+  import được module nào.
+- `ThemeToggle` là nút có `aria-label` tiếng Việt (ví dụ `"Chuyển sang giao diện tối"`), icon mặt trời/mặt trăng từ `react-icons`, đặt ở vị trí cố định (thường là header — hiện nằm trong `AppHeader`).
 
 ### Panel không dùng shadow
 
@@ -40,6 +45,27 @@ Tài liệu này là luật bắt buộc cho mọi màn hình của AmigoAct.
 - Cài một lần: `cd frontend && bun add react-icons`.
 - Import theo nhóm icon cụ thể, ví dụ `import { FiSun, FiMoon } from "react-icons/fi"`.
 - Icon trang trí luôn có `aria-hidden="true"`; nút chứa icon phải có `aria-label` tiếng Việt. Không dùng emoji thay icon.
+
+## Thành phần dùng chung đã có sẵn
+
+Dùng lại những component này thay vì viết mới — tất cả ở
+`frontend/components/`:
+
+| Component | Vai trò |
+| --- | --- |
+| `Providers`, `ThemeProvider`, `AuthProvider`, `RealtimeProvider` | Stack provider mount một lần ở root layout (theme → query client → auth → realtime) |
+| `AppHeader` | Header chung: điều hướng, trạng thái socket (`useSocketStatus`), `ThemeToggle`, logout |
+| `ThemeToggle`, `InlineScript` | Nút chuyển theme + script pre-paint (xem mục Theme) |
+| `RequireAuth` | Gate route cần đăng nhập; loading state thật, anonymous → `/login?next=` |
+| `StatusChip` | Nhãn trạng thái (activity/registration) theo cặp border+nền, không shadow |
+| `EmptyState` | Empty-state thật: icon + tiêu đề + gợi ý + link hành động kế tiếp |
+| `ErrorBanner` | Hiển thị `ApiError` đã dịch sang tiếng Việt qua `lib/errors.ts` |
+| `Field` | Ô nhập form chuẩn (label, hint, lỗi) |
+| `ConfirmAction` | Nút hành động nguy hiểm có bước xác nhận |
+| `QrPanel` | Panel mã QR điểm danh (`qrcode.react`) trên trang manage |
+| `LifecycleBar` | Cụm chuyển trạng thái publish/cancel/complete của hoạt động |
+| `SpeculationRules` | `<script type="speculationrules">` cho prefetch/prerender |
+| `ActivityCard`, `ActivityForm`, `RegistrationsTable` | Card hoạt động, form tạo/sửa, bảng duyệt đăng ký |
 
 ## Checklist cho mỗi PR giao diện
 

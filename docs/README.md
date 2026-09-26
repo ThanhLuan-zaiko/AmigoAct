@@ -5,6 +5,7 @@
 | [development.md](development.md) | Cài đặt local, toàn bộ lệnh, cấu hình trình soạn thảo |
 | [architecture.md](architecture.md) | Cách backend và frontend kết nối với nhau, quy tắc phân tầng |
 | [testing.md](testing.md) | Chi tiết về ba tầng kiểm thử |
+| [ui-design.md](ui-design.md) | Luật giao diện: theme, panel, icon, component dùng chung |
 | [ci.md](ci.md) | Từng job của GitHub Actions và cách debug khi build đỏ |
 
 Nếu bạn chưa từng chạy repo này, hãy bắt đầu với

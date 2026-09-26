@@ -116,6 +116,64 @@ def test_honours_a_custom_prefix(self, build_client):
         assert client.get("/api/health").status_code == 404
 ```
 
+### SQLite đóng vai Oracle
+
+Mọi test backend chạm DB chạy trên **SQLite file-backed** (`tmp_path`), qua
+aiosqlite — không test nào cần listener Oracle thật. Chuỗi fixture trong
+`tests/conftest.py`:
+
+- `db_sessionmaker` — `Base.metadata.create_all` bằng sync engine, rồi query
+  qua async engine `NullPool` với listener `connect` bật
+  `PRAGMA foreign_keys=ON` (SQLite mặc định tắt; bật lên thì
+  `ON DELETE CASCADE/SET NULL` của schema.sql giữ đúng nghĩa).
+- `db_app` — app thật từ `build_app(jwt_secret=TEST_JWT_SECRET)` với
+  `app.dependency_overrides[get_session]` trỏ vào factory SQLite.
+- `db_client` — `TestClient` chạy lifespan của `db_app`.
+- `auth_headers` — đăng ký một user qua HTTP thật, trả `(headers, user)`.
+
+Ba chỗ `db/types.py` giúp SQLite giả được Oracle: `Uuid` lưu 16-byte blob,
+`DecimalAmount` lưu **integer hundredths** (`12.34` → `1234`), và các index
+"unique-when-present" của Oracle (CASE function index) được ORM khai báo lại
+thành partial unique index (`sqlite_where`).
+
+**Những gì test không nhìn thấy** (chỉ đúng trên Oracle):
+
+- `with_for_update` là no-op trên SQLite — test đi qua cùng code path nhưng
+  không chứng minh được khoá dòng thật.
+- Pin `TIME_ZONE='+00:00'` qua `session_callback` và ngữ nghĩa
+  `TIMESTAMP WITH TIME ZONE` của driver thin.
+- `DEFAULT SYSTIMESTAMP` và trigger `BEFORE UPDATE` — trên SQLite các giá
+  trị này do `utcnow()`/`business_today()` phía Python đặt.
+- Độ dài `VARCHAR2(n CHAR)` theo ký tự và CHECK constraint của Oracle.
+
+Quy tắc: hành vi tận dụng sức mạnh Oracle (khoá, index hàm, trigger) phải
+được viết sao cho SQLite vẫn chạy đúng semantics — và được ghi chú trong
+docstring như `services/registrations.py` đang làm.
+
+### Argon2 nhanh trong test
+
+`_fast_password_hasher` (opt-in, đã gắn vào `db_client`) đổi `security._HASHER`
+sang argon2id tham số rẻ (`t=1`, 8 MiB). Profile RFC 9106 chuẩn tốn ~100 ms+
+mỗi lần băm — với vài lần hash mỗi request test, đó sẽ là phần lớn thời gian
+suite. Vẫn là thuật toán thật: register/login đi qua hash + verify đầy đủ.
+`tests/unit/test_security.py` cố tình **không** dùng fixture này để kiểm tra
+tham số production qua `password_needs_rehash`.
+
+### Test sự kiện WebSocket
+
+`tests/integration/test_ws_events.py` là mẫu cho fan-out: ba tài khoản (admin
+org, member, outsider) giữ ba socket `/api/ws?token=` thật trong khi luồng
+nghiệp vụ chạy qua HTTP; cuối cùng gửi `ping` và đọc đến `pong` — socket là
+FIFO nên mọi event đã push nằm trước `pong`, cho ra danh sách event chính
+xác. Assert cả type lẫn tập key `data`, và assert cả người **không** nhận.
+
+### Chứng nhận PDF
+
+`tests/integration/test_certificates_api.py` kiểm chứng PDF bằng `pypdf`
+(dev-only): `PdfReader(BytesIO(body)).pages[0].extract_text()` rồi assert
+trên text trích ra — header HTTP chính xác (`content-type`,
+`content-disposition`, `cache-control`) được ghim ở tầng regression.
+
 ## 3. Regression test
 
 **Phạm vi:** hành vi đã từng chạy. Regression test không khám phá hành vi; nó
@@ -131,10 +189,17 @@ Hai điều làm nên một regression test đáng viết:
   ra nó hôm nay.
 
 Backend — `backend/tests/regression/test_api_contract.py` ghim chính xác tập key
-của mọi endpoint và chính xác tập path được đăng ký trong OpenAPI.
+của mọi endpoint, chính xác tập path được đăng ký trong OpenAPI, và header của
+download chứng nhận PDF. `test_ws_contract.py` ghim bốn `type` event và tập key
+`data` của từng loại. `test_schema_drift.py` ghim tập cột: `schema.sql` ⇄ ORM
+metadata (`MAPPED_TABLES`), nên sửa DDL mà quên model — hoặc ngược lại — là đỏ
+ngay.
 
 Frontend — `frontend/tests/regression/api-contract.test.ts` ghim các hằng số mà
-hai stack dùng chung, để một thay đổi ở một phía mà quên phía kia sẽ làm CI đỏ.
+hai stack dùng chung (greeting, tập status/role, alphabet + độ dài mã điểm danh,
+tập error code → nhãn tiếng Việt), còn `realtime-contract.test.ts` ghim tên event
+và ánh xạ event → query key bị invalidate. Một thay đổi ở một phía mà quên phía
+kia sẽ làm CI đỏ.
 
 ### Khi một regression test fail
 
@@ -156,6 +221,14 @@ bun run e2e:install   # một lần
 bun run e2e
 bun run e2e:ui        # tương tác, có trình debugger time-travel
 ```
+
+Spec **không cần backend thật**: `page.route("**/api/...")` chặn request ở
+tầng network và `route.fulfill` trả JSON. Vì trang chạy ở origin
+`127.0.0.1:3100` còn request đi tới origin API khác, mọi fulfill phải kèm
+header `Access-Control-Allow-Origin: *` — thiếu nó trình duyệt sẽ chặn
+response y như một lỗi CORS thật. Session được seed bằng `page.addInitScript`
+ghi `amigoact-token` vào `localStorage` trước khi JS của app chạy, nên các
+trang `RequireAuth` thấy session ngay.
 
 Nguyên tắc:
 

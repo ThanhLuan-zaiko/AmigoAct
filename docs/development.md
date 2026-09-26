@@ -25,9 +25,16 @@ git --version
 git clone <repo-url> amigoact
 cd amigoact
 
+# Database — Oracle Free trong Docker (trên Windows: chạy trong WSL)
+docker run -d --name myoracle -p 1521:1521 \
+  -e ORACLE_PASSWORD=SysPassword1 -e ORACLE_DATABASE=MyOracleDB \
+  -v oracle_data:/opt/oracle/oradata gvenzl/oracle-free
+
 # Backend
 cd backend
 uv sync --all-groups
+cp .env.example .env        # điền AMIGOACT_DB_PASSWORD + AMIGOACT_JWT_SECRET
+.\reset_database.ps1        # tạo schema app + áp schema.sql (hỏi mật khẩu admin)
 uv run uvicorn backend.main:app --reload --port 8100   # http://localhost:8100
 
 # Frontend (terminal thứ hai)
@@ -35,6 +42,11 @@ cd frontend
 bun install
 bun run dev                                  # http://localhost:3000
 ```
+
+Backend chỉ boot khi ping được DB (`AMIGOACT_DB_ENABLED` mặc định `true`), nên
+thứ tự là: container Oracle lên → `reset_database.ps1` → uvicorn. Chi tiết
+container, user admin và schema ở
+[backend/README.md → Cơ sở dữ liệu](../backend/README.md#cơ-sở-dữ-liệu).
 
 Mở <http://localhost:8100/docs> để xem giao diện OpenAPI tương tác. Backend
 dùng port 8100 vì port 8000 bị WSL port relay chiếm (container Portainer).
@@ -60,6 +72,16 @@ cp frontend/.env.example frontend/.env.local
 | `AMIGOACT_LOG_LEVEL` | `INFO` | `DEBUG` … `CRITICAL` |
 | `AMIGOACT_API_PREFIX` | `/api` | Tiền tố dùng để gắn tất cả router |
 | `AMIGOACT_CORS_ORIGINS` | `[]` | Mảng JSON các origin được phép, ví dụ `["http://localhost:3000"]` |
+| `AMIGOACT_DB_ENABLED` | `true` | `false` để boot không DB (bộ test dùng cờ này) |
+| `AMIGOACT_DB_HOST` / `_PORT` / `_SERVICE` | `localhost` / `1521` / `MYORACLEDB` | Easy Connect `host:port/service` của Oracle |
+| `AMIGOACT_DB_USER` / `_PASSWORD` | `amigoact` / trống | Schema ứng dụng; `reset_database.ps1` tạo nó |
+| `AMIGOACT_DB_POOL_MIN` / `_MAX` / `_INCREMENT` | `1` / `4` / `1` | Kích thước pool `oracledb` |
+| `AMIGOACT_DB_ADMIN_USER` | `SYSTEM` | Chỉ `reset_database.ps1` dùng; mật khẩu admin đọc từ `AMIGOACT_DB_ADMIN_PASSWORD` hoặc hỏi — **không** nằm trong `.env` |
+| `AMIGOACT_JWT_SECRET` | trống | Secret HMAC ký access token; trống → helper fail và kênh WS chạy anonymous (chỉ dev) |
+| `AMIGOACT_JWT_ALGORITHM` | `HS256` | Thuật toán ký token |
+| `AMIGOACT_JWT_TTL_SECONDS` | `3600` | Thời hạn access token |
+| `AMIGOACT_JWT_ISSUER` | `amigoact` | Claim `iss` ghi vào và đòi hỏi ở mọi token |
+| `AMIGOACT_TIMEZONE` | `Asia/Ho_Chi_Minh` | Timezone nghiệp vụ (IANA): quyết định `awarded_on`, ngày trên chứng nhận, lọc báo cáo |
 
 ### Frontend
 
@@ -70,6 +92,33 @@ cp frontend/.env.example frontend/.env.local
 
 Giá trị `NEXT_PUBLIC_*` được nội tuyến thẳng vào bundle phía client lúc build.
 Không bao giờ đặt bí mật vào biến loại này.
+
+## Schema và dependency
+
+**`backend/schema.sql` là source of truth** cho schema Oracle; `db/models/`
+mirror nó. Regression test `tests/regression/test_schema_drift.py` so sánh
+tập cột của từng bảng được map, nên hai bên không thể lặng lẽ lệch nhau. Khi
+thêm/sửa cột hoặc map thêm bảng: đổi `schema.sql`, đổi model, thêm tên bảng
+vào `MAPPED_TABLES` — trong **cùng một commit** — rồi chạy
+`reset_database.ps1` để áp lên DB dev. Bảng `images`, `activity_photos`,
+`volunteer_record_images`, `notifications` đang có trong DDL nhưng chưa được
+map ORM.
+
+Những pin đáng chú ý trong `backend/pyproject.toml`:
+
+- `sqlalchemy[asyncio]>=2.0.54,<2.1` — ở lại nhánh 2.0 ổn định; 2.1 là bản
+  đổi lớn, chỉ nâng khi có chủ đích.
+- `fpdf2==2.8.5` (pin chính xác) và `fonttools>=4.65,<4.66` — phục vụ chứng
+  nhận PDF, ghim theo quy tắc 7 ngày của repo (không nhận phiên bản phát
+  hành chưa quá 7 ngày); fonttools bị chặn `<4.66` vì bản mới hơn chưa tương
+  thích với subsetting font của fpdf2.
+- `tzdata` — database IANA trên Windows (Windows không có sẵn zoneinfo).
+- Group `dev`: `aiosqlite` (SQLite async đứng vai Oracle trong test),
+  `pypdf` (đọc PDF trong test chứng nhận), `httpx2` cho `TestClient` —
+  xem [backend/README.md](../backend/README.md).
+
+Frontend: `@tanstack/react-query` là đường fetch duy nhất phía client,
+`react-icons` là bộ icon duy nhất, `qrcode.react` vẽ QR điểm danh.
 
 ## Lệnh thường dùng
 

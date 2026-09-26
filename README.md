@@ -2,23 +2,39 @@
 
 Xây dựng thói quen cùng nhau, từng hoạt động một.
 
+Hệ thống quản lý hoạt động tình nguyện cho Đoàn trường và các tổ chức sinh
+viên: tổ chức tạo và công bố hoạt động, đoàn viên đăng ký tham gia, ban chấp
+hành duyệt đăng ký, điểm danh tại sự kiện bằng mã QR/mã nhập tay, ghi nhận
+giờ tình nguyện và điểm rèn luyện, cấp chứng nhận PDF và tổng hợp báo cáo
+theo khoa và theo tháng.
+
 Monorepo fullstack: dịch vụ **FastAPI** và frontend **Next.js 16**.
 
 | | Công nghệ |
 | --- | --- |
-| `backend/` | Python 3.14 · FastAPI · uv · ruff · mypy (strict) · pytest |
-| `frontend/` | TypeScript 5 · React 19 · Next.js 16 App Router · Bun · biome · Vitest · Playwright |
+| `backend/` | Python 3.14 · FastAPI · SQLAlchemy 2.0 async trên Oracle (python-oracledb thin) · argon2id + JWT · uv · ruff · mypy (strict) · pytest |
+| `frontend/` | TypeScript 5 · React 19 · Next.js 16 App Router · TanStack Query · Tailwind 4 · Bun · biome · Vitest · Playwright |
 
 ## Bắt đầu nhanh
 
 ```bash
-# Backend
-cd backend && uv sync --all-groups && cp .env.example .env
-uv run uvicorn backend.main:app --reload --port 8100   # http://localhost:8100
+# 0. Cơ sở dữ liệu — Oracle Free trong Docker (chi tiết: backend/README.md)
+docker run -d --name myoracle -p 1521:1521 \
+  -e ORACLE_PASSWORD=SysPassword1 -e ORACLE_DATABASE=MyOracleDB \
+  -v oracle_data:/opt/oracle/oradata gvenzl/oracle-free
 
-# Frontend
-cd frontend && bun install && cp .env.example .env
-bun run dev                                   # http://localhost:3000
+# 1. Backend — http://localhost:8100
+cd backend && uv sync --all-groups && cp .env.example .env
+#    điền vào .env: AMIGOACT_DB_PASSWORD=<mật khẩu schema>,
+#                   AMIGOACT_JWT_SECRET=<chuỗi ngẫu nhiên dài>
+#    (AMIGOACT_TIMEZONE mặc định Asia/Ho_Chi_Minh — không bắt buộc)
+.\reset_database.ps1               # tạo schema AMIGOACT + áp schema.sql
+#    (script hỏi mật khẩu admin — SysPassword1 nếu bạn dùng docker run ở trên)
+uv run uvicorn backend.main:app --reload --port 8100
+
+# 2. Frontend — http://localhost:3000
+cd frontend && bun install && cp .env.example .env.local
+bun run dev
 ```
 
 ## Kiểm tra trước khi gửi PR
@@ -35,6 +51,7 @@ bun run scripts/check-file-size.mjs
 - [Phát triển](docs/development.md) — cài đặt, lệnh, xử lý sự cố
 - [Kiến trúc](docs/architecture.md) — phân tầng và vòng đời request
 - [Kiểm thử](docs/testing.md) — unit / tích hợp / hồi quy / e2e
+- [Thiết kế giao diện](docs/ui-design.md) — theme, panel, icon, component dùng chung
 - [CI](docs/ci.md) — mọi workflow và cách debug khi build đỏ
 - [Hướng dẫn cho agent](AGENTS.md) — các quy tắc ràng buộc thay đổi mã nguồn
 
