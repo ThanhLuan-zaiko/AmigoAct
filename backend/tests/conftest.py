@@ -33,8 +33,13 @@ def _isolated_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     ``DB_ENABLED`` is forced off so no test ever needs — or accidentally
     reaches — a real Oracle listener. Tests that exercise the pool path
     override this via ``build_app(db_enabled="true")`` and mock ``oracledb``.
+
+    ``JWT_SECRET`` is blanked so the developer's ``.env`` cannot leak into
+    the suite and flip the WebSocket channel into authenticated mode. Tests
+    that need auth opt in via ``build_client(jwt_secret=...)``.
     """
     monkeypatch.setenv(f"{ENV_PREFIX}DB_ENABLED", "false")
+    monkeypatch.setenv(f"{ENV_PREFIX}JWT_SECRET", "")
     reset_settings_cache()
     yield
     reset_settings_cache()

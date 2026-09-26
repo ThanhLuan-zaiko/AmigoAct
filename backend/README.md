@@ -83,6 +83,28 @@ $env:AMIGOACT_DB_ADMIN_PASSWORD = "..."
 .\reset_database.ps1 -Force
 ```
 
+## Xác thực & kênh realtime
+
+Backend sở hữu toàn bộ cơ chế xác thực — xem `src/backend/security.py`:
+
+- **Mật khẩu** băm bằng **argon2id** (`hash_password`/`verify_password`,
+  tham số theo RFC 9106); `password_needs_rehash` phục vụ nâng tham số sau
+  này.
+- **JWT** bearer do backend phát hành và kiểm tra
+  (`create_access_token`/`decode_access_token`, mặc định HS256). Secret đọc
+  từ `AMIGOACT_JWT_SECRET` — không có default, helper báo lỗi rõ khi thiếu.
+- **ID thực thể** là **UUIDv7** sinh phía app qua `domain/ids.py:new_id()`
+  (sắp xếp theo thời gian, không cần sequence); lưu trong Oracle dạng
+  `RAW(16)` qua `uuid.bytes`.
+
+Kênh **WebSocket** xương sống nằm ở `src/backend/websocket.py`, mount tại
+`ws://localhost:8100/api/ws`. Envelope JSON hai chiều `{"type", "data"}`;
+`hello`/`ping`/`error` là type có sẵn, feature mới mở rộng qua `_dispatch`.
+`ConnectionManager` trên `app.state.ws_manager` lo việc gửi/broadcast. Khi
+`AMIGOACT_JWT_SECRET` được đặt, client phải truyền `?token=<jwt>` hợp lệ,
+sai/thiếu sẽ bị đóng với mã `4401`; chưa đặt secret thì chạy anonymous (chỉ
+cho dev).
+
 ## Bố cục
 
 ```
@@ -90,6 +112,8 @@ src/backend/
 ├── main.py              # create_app() factory + ASGI `app`
 ├── config.py            # Settings, đọc từ môi trường và được cache
 ├── database.py          # pool Oracle (oracledb thin) + dependency
+├── security.py          # argon2id hashing + JWT phát hành/kiểm tra
+├── websocket.py         # kênh realtime /ws + ConnectionManager
 ├── api/routers/         # bề mặt HTTP: route, mã trạng thái, tag
 └── domain/              # logic nghiệp vụ thuần — không fastapi, không I/O
 scripts/
@@ -143,6 +167,7 @@ Chi tiết ở [testing.md](../docs/testing.md).
 | `GET` | `/api/health/ready` | Readiness. `{"status": "ready"}` |
 | `GET` | `/api/greeting?name=` | Endpoint demo cho tầng domain |
 | `GET` | `/version` | Tên và phiên bản, nằm ngoài tiền tố API |
+| `WS` | `/api/ws` | Kênh realtime, envelope `{"type","data"}`; `?token=` khi JWT bật |
 
 Tập key chính xác của response được ghim bởi
 `tests/regression/test_api_contract.py`. Đổi một key nghĩa là đổi cả test đó

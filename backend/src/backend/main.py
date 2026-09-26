@@ -20,6 +20,8 @@ from fastapi.responses import JSONResponse
 from backend.api.routers import health
 from backend.config import get_settings
 from backend.database import build_dsn, create_pool, verify_pool
+from backend.websocket import ConnectionManager
+from backend.websocket import router as ws_router
 
 logger = logging.getLogger("backend")
 
@@ -67,6 +69,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     else:
         logger.warning("Oracle disabled (AMIGOACT_DB_ENABLED=false)")
     app.state.db_pool = pool
+    app.state.ws_manager = ConnectionManager()
 
     app.state.ready = True
     try:
@@ -99,6 +102,7 @@ def create_app() -> FastAPI:
         )
 
     application.include_router(health.router, prefix=settings.api_prefix)
+    application.include_router(ws_router, prefix=settings.api_prefix)
 
     @application.exception_handler(ValueError)
     async def value_error_handler(_request: Request, exc: ValueError) -> JSONResponse:

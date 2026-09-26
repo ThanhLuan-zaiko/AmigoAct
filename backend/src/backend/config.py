@@ -61,6 +61,14 @@ class Settings(BaseSettings):
     # real environment or prompts for it, so it never lands in .env.
     db_admin_user: str = "SYSTEM"
 
+    # Auth — JWT bearer tokens, issued and verified only by this backend
+    # (see security.py). The secret is env-only and has no default: token
+    # helpers raise loudly when it is unset.
+    jwt_secret: str = ""
+    jwt_algorithm: str = "HS256"
+    jwt_ttl_seconds: int = 3600
+    jwt_issuer: str = "amigoact"
+
     @field_validator("*", mode="before")
     @classmethod
     def _blank_env_falls_back_to_default(cls, value: object, info: ValidationInfo) -> object:
