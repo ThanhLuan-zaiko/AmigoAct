@@ -19,11 +19,69 @@ Cấu hình được đọc từ `.env` với tiền tố `AMIGOACT_` — xem
 ## Chạy
 
 ```bash
-uv run uvicorn backend.main:app --reload     # http://localhost:8000
-uv run uvicorn backend.main:app --reload --port 8100
+uv run uvicorn backend.main:app --reload --port 8100   # http://localhost:8100
 ```
 
-Tài liệu API tương tác: <http://localhost:8000/docs>
+Port mặc định là **8100**: 8000 bị WSL port relay chiếm (container Portainer
+trong WSL map `8000:8000`). Tài liệu API tương tác:
+<http://localhost:8100/docs>
+
+## Cơ sở dữ liệu
+
+App kết nối Oracle Database (`gvenzl/oracle-free`) chạy trong Docker trên WSL
+bằng driver `python-oracledb` ở chế độ thin — không cần Oracle Instant Client.
+
+Khởi động container (chạy trong WSL):
+
+```bash
+docker run -d \
+  --name myoracle \
+  -p 1521:1521 \
+  -e ORACLE_PASSWORD=SysPassword1 \
+  -e ORACLE_DATABASE=MyOracleDB \
+  -v oracle_data:/opt/oracle/oradata \
+  gvenzl/oracle-free
+```
+
+WSL forward port của container ra `localhost` của Windows, nên từ Windows
+chỉ cần `AMIGOACT_DB_HOST=localhost`. `ORACLE_DATABASE` trở thành tên PDB —
+đặt `AMIGOACT_DB_SERVICE` tương ứng (mặc định `MYORACLEDB`; image còn có sẵn
+PDB `FREEPDB1`).
+
+Các key cần điền trong `.env` (xem [`.env.example`](.env.example)):
+
+```
+AMIGOACT_DB_USER=AMIGOACT                 # schema ứng dụng, được reset tạo ra
+AMIGOACT_DB_PASSWORD=<mật khẩu schema>
+AMIGOACT_DB_ADMIN_USER=SYSTEM             # hoặc SYS (kết nối AS SYSDBA)
+```
+
+Mật khẩu admin **không nằm trong `.env`**: khi reset, script đọc env var
+`AMIGOACT_DB_ADMIN_PASSWORD` hoặc hỏi bạn nhập (ẩn ký tự). Nếu `.env` lỡ chứa
+key đó, `reset_database.ps1` sẽ cảnh báo và bỏ qua nó.
+
+Pool kết nối được tạo trong lifespan khi `AMIGOACT_DB_ENABLED=true` (mặc
+định); app fail ngay lúc khởi động nếu không ping được DB. Router lấy
+connection qua dependency `backend.database.get_db_connection`.
+
+### Reset schema khi dev
+
+```powershell
+.\reset_database.ps1            # có hỏi xác nhận
+.\reset_database.ps1 -Force     # bỏ qua xác nhận
+```
+
+Script đọc `.env`, kết nối bằng user admin, drop `AMIGOACT_DB_USER` (nếu tồn
+tại) rồi tạo lại schema trống với đủ quyền. Chỉ chạy với host local —
+`-AllowRemote` nếu thật sự cần. Không cần `docker exec`: driver thin đi qua
+`localhost:1521`.
+
+Chạy không tương tác (CI/task runner) thì export trước:
+
+```powershell
+$env:AMIGOACT_DB_ADMIN_PASSWORD = "..."
+.\reset_database.ps1 -Force
+```
 
 ## Bố cục
 
@@ -31,8 +89,11 @@ Tài liệu API tương tác: <http://localhost:8000/docs>
 src/backend/
 ├── main.py              # create_app() factory + ASGI `app`
 ├── config.py            # Settings, đọc từ môi trường và được cache
+├── database.py          # pool Oracle (oracledb thin) + dependency
 ├── api/routers/         # bề mặt HTTP: route, mã trạng thái, tag
 └── domain/              # logic nghiệp vụ thuần — không fastapi, không I/O
+scripts/
+└── reset_db.py          # drop & recreate schema — gọi bởi reset_database.ps1
 tests/
 ├── conftest.py          # fixture app / client / build_app
 ├── unit/                # một đơn vị cô lập

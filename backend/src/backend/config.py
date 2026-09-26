@@ -6,10 +6,12 @@ tests can override the environment and call :func:`reset_settings_cache`.
 
 from __future__ import annotations
 
+import json
 from functools import lru_cache
+from typing import Annotated
 
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, ValidationInfo, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 ENV_PREFIX = "AMIGOACT_"
 
@@ -34,7 +36,52 @@ class Settings(BaseSettings):
     debug: bool = False
     log_level: str = Field(default="INFO", pattern="^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$")
     api_prefix: str = "/api"
-    cors_origins: list[str] = Field(default_factory=list)
+    # NoDecode: pydantic-settings would JSON-decode the raw env string before
+    # validators run, so a blank value would crash before reaching the
+    # blank-to-default hook. Decoding happens in _decode_cors_origins instead.
+    cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
+
+    # Oracle Database connection (python-oracledb, thin mode — no Instant
+    # Client needed). The pool is created in the app lifespan when
+    # ``db_enabled`` is true; the app fails to start if the database is
+    # unreachable.
+    db_enabled: bool = True
+    db_host: str = "localhost"
+    db_port: int = 1521
+    db_service: str = "MYORACLEDB"
+    db_user: str = "amigoact"
+    db_password: str = ""
+    db_pool_min: int = 1
+    db_pool_max: int = 4
+    db_pool_increment: int = 1
+
+    # Admin username used ONLY by scripts/reset_db.py to drop and recreate
+    # ``db_user``; the app never uses it. The admin password is deliberately
+    # NOT a setting — reset_db.py reads AMIGOACT_DB_ADMIN_PASSWORD from the
+    # real environment or prompts for it, so it never lands in .env.
+    db_admin_user: str = "SYSTEM"
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _blank_env_falls_back_to_default(cls, value: object, info: ValidationInfo) -> object:
+        """Treat an empty ``.env`` value as "unset" so the field default applies.
+
+        ``.env.example`` ships keys with no values; without this hook a copied
+        file would fail validation (e.g. ``log_level=""`` breaks the pattern).
+        """
+        if value == "" and info.field_name is not None:
+            return cls.model_fields[info.field_name].get_default()
+        return value
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _decode_cors_origins(cls, value: object) -> object:
+        """Parse the JSON array env value that ``NoDecode`` left as a string."""
+        if isinstance(value, str):
+            stripped = value.strip()
+            parsed: object = json.loads(stripped) if stripped else []
+            return parsed
+        return value
 
 
 @lru_cache(maxsize=1)

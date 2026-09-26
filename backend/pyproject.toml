@@ -7,6 +7,7 @@ authors = [{ name = "ThanhLuan-zaiko", email = "deptrai05.pr@gmail.com" }]
 requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.121",
+    "oracledb>=26.0.1",
     "pydantic>=2.11",
     "pydantic-settings>=2.10",
     "uvicorn[standard]>=0.38",
@@ -61,7 +62,19 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Tests may use private helpers and magic values, and D103 relaxes the
 # "missing docstring in public function" rule for test functions.
-"tests/**" = ["D100", "D101", "D102", "D103", "S101", "B011", "ANN401"]
+"tests/**" = [
+    "D100",
+    "D101",
+    "D102",
+    "D103",
+    "D105",  # magic methods on test doubles need no docstring
+    "D107",  # __init__ on test doubles needs no docstring
+    "S101",
+    "S105",  # hardcoded credentials are normal inside the test suite
+    "S106",
+    "B011",
+    "ANN401",
+]
 # `__init__.py` files are self-documenting by their module docstring only.
 "src/backend/__init__.py" = ["D104"]
 

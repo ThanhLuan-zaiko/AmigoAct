@@ -28,7 +28,13 @@ from backend.main import create_app
 
 @pytest.fixture(autouse=True)
 def _isolated_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """Force every test to start from a clean, deterministic settings cache."""
+    """Force every test to start from a clean, deterministic settings cache.
+
+    ``DB_ENABLED`` is forced off so no test ever needs — or accidentally
+    reaches — a real Oracle listener. Tests that exercise the pool path
+    override this via ``build_app(db_enabled="true")`` and mock ``oracledb``.
+    """
+    monkeypatch.setenv(f"{ENV_PREFIX}DB_ENABLED", "false")
     reset_settings_cache()
     yield
     reset_settings_cache()
