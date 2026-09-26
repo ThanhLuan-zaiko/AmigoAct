@@ -1,14 +1,16 @@
-"""Drop and recreate the application schema in a local Oracle database.
+"""Drop, recreate, and rebuild the application schema in a local Oracle database.
 
 Dev helper invoked by ``reset_database.ps1`` — it can also be run directly::
 
-    uv run python scripts/reset_db.py [--allow-remote]
+    uv run python scripts/reset_db.py [--allow-remote] [--schema PATH]
 
 It connects as ``AMIGOACT_DB_ADMIN_USER`` (``SYS`` connects AS SYSDBA) to
 ``AMIGOACT_DB_HOST:AMIGOACT_DB_PORT/AMIGOACT_DB_SERVICE``, drops
-``AMIGOACT_DB_USER`` if present, and recreates it with the privileges the
-application needs. It refuses to touch a remote host or an Oracle-maintained
-account unless ``--allow-remote`` is passed.
+``AMIGOACT_DB_USER`` if present, recreates it with the privileges the
+application needs, then applies ``schema.sql`` (``--schema`` overrides the
+path) through a fresh connection as the app user. It refuses to touch a
+remote host or an Oracle-maintained account unless ``--allow-remote`` is
+passed.
 
 The admin password is read from the ``AMIGOACT_DB_ADMIN_PASSWORD`` environment
 variable, falling back to a masked prompt — it is never taken from ``.env``.
@@ -16,14 +18,18 @@ variable, falling back to a masked prompt — it is never taken from ``.env``.
 
 from __future__ import annotations
 
+import argparse
 import getpass
 import os
 import re
 import sys
+from pathlib import Path
 
 import oracledb
 
 from backend.config import get_settings
+
+_DEFAULT_SCHEMA = Path(__file__).resolve().parent.parent / "schema.sql"
 
 _IDENTIFIER = re.compile(r"^[A-Za-z][A-Za-z0-9_$#]{0,127}$")
 _LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
@@ -96,9 +102,100 @@ def _quote_password(value: str) -> str:
     return '"' + value.replace('"', '""') + '"'
 
 
+_PLSQL_START = re.compile(
+    r"^CREATE\s+(?:OR\s+REPLACE\s+)?(?:TRIGGER|PROCEDURE|FUNCTION|PACKAGE)\b",
+    re.IGNORECASE,
+)
+
+
+def _split_sql_statements(script: str) -> list[str]:
+    """Split a DDL script into individual statements.
+
+    ``schema.sql`` follows two conventions: a plain statement ends with ``;``
+    at end-of-line, and a PL/SQL block (``CREATE TRIGGER`` and friends) ends
+    with ``/`` alone on a line — the delimiter is stripped, not sent to
+    Oracle. Blank lines and full-line ``--`` comments are skipped; trailing
+    ``--`` comments inside a statement are left for Oracle to ignore.
+    """
+    statements: list[str] = []
+    buffer: list[str] = []
+    in_plsql = False
+    for line in script.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("--"):
+            continue
+        if in_plsql:
+            if stripped == "/":
+                statement = "\n".join(buffer).strip()
+                if statement:
+                    statements.append(statement)
+                buffer, in_plsql = [], False
+            else:
+                buffer.append(line)
+            continue
+        if not buffer and _PLSQL_START.match(stripped):
+            in_plsql = True
+        buffer.append(line)
+        if not in_plsql and stripped.endswith(";"):
+            statement = "\n".join(buffer).rstrip().removesuffix(";").strip()
+            if statement:
+                statements.append(statement)
+            buffer = []
+    tail = "\n".join(buffer).strip()
+    if tail:
+        raise ValueError(f"unterminated statement in schema file: {tail[:80]}...")
+    return statements
+
+
+def _apply_schema(dsn: str, user: str, password: str, schema_path: Path) -> None:
+    """Execute every statement in ``schema_path`` as the app user.
+
+    Connecting as the freshly created user doubles as a credential check:
+    a wrong ``AMIGOACT_DB_PASSWORD`` fails here rather than at app startup.
+    """
+    if not schema_path.is_file():
+        print(f"error: schema file not found: {schema_path}", file=sys.stderr)
+        raise SystemExit(2)
+    statements = _split_sql_statements(schema_path.read_text(encoding="utf-8"))
+    print(f"Applying {len(statements)} statements from {schema_path.name} ...")
+    connection = oracledb.connect(user=user, password=password, dsn=dsn)
+    try:
+        cursor = connection.cursor()
+        for index, statement in enumerate(statements, start=1):
+            try:
+                cursor.execute(statement)
+            except oracledb.Error:
+                first_line = statement.splitlines()[0] if statement.splitlines() else ""
+                print(
+                    f"error: statement {index} failed: {first_line} ...",
+                    file=sys.stderr,
+                )
+                raise
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    """Parse CLI flags for the reset helper."""
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
+    parser.add_argument(
+        "--allow-remote",
+        action="store_true",
+        help="permit resetting a non-localhost database (dangerous)",
+    )
+    parser.add_argument(
+        "--schema",
+        type=Path,
+        default=_DEFAULT_SCHEMA,
+        help=f"DDL file applied after the user is recreated (default: {_DEFAULT_SCHEMA})",
+    )
+    return parser.parse_args(argv)
+
+
 def main(argv: list[str]) -> int:
-    """Entry point: drop the app schema user and recreate it empty."""
-    allow_remote = "--allow-remote" in argv
+    """Entry point: drop the app user, recreate it, and apply schema.sql."""
+    args = _parse_args(argv)
     settings = get_settings()
 
     host, port, service = settings.db_host, settings.db_port, settings.db_service
@@ -110,7 +207,7 @@ def main(argv: list[str]) -> int:
         print("error: AMIGOACT_DB_PASSWORD is empty — fill it in .env", file=sys.stderr)
         return 2
 
-    _check_target(app_user, admin_user, allow_remote, host)
+    _check_target(app_user, admin_user, args.allow_remote, host)
     admin_password = _admin_password(admin_user, dsn)
     if not admin_password:
         print("error: empty admin password", file=sys.stderr)
@@ -140,7 +237,8 @@ def main(argv: list[str]) -> int:
     finally:
         connection.close()
 
-    print(f"Done - schema {app_user} is empty and ready on {dsn}.")
+    _apply_schema(dsn, app_user, settings.db_password, args.schema)
+    print(f"Done - schema {app_user} rebuilt from {args.schema.name} on {dsn}.")
     return 0
 
 

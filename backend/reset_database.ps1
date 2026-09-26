@@ -1,10 +1,12 @@
 <#
 .SYNOPSIS
-    Resets the local dev Oracle schema: drops and recreates AMIGOACT_DB_USER.
+    Resets the local dev Oracle schema: drops and recreates AMIGOACT_DB_USER,
+    then applies schema.sql.
 
 .DESCRIPTION
     Reads connection settings from .env (same file the app uses), exports them
-    for the reset helper, and runs scripts/reset_db.py via `uv run`.
+    for the reset helper, and runs scripts/reset_db.py via `uv run`. The helper
+    recreates the app user and rebuilds all tables from schema.sql.
 
     The Oracle container runs in WSL (gvenzl/oracle-free). Its port 1521 is
     forwarded to Windows localhost by WSL, so AMIGOACT_DB_HOST=localhost works.
@@ -18,6 +20,10 @@
 .PARAMETER EnvFile
     Path to the env file to read. Defaults to .env next to this script.
 
+.PARAMETER SchemaFile
+    DDL file applied after the user is recreated. Defaults to schema.sql next
+    to this script.
+
 .EXAMPLE
     .\reset_database.ps1            # asks for confirmation
     .\reset_database.ps1 -Force     # no prompt (e.g. from a task runner)
@@ -26,7 +32,8 @@
 param(
     [switch]$Force,
     [switch]$AllowRemote,
-    [string]$EnvFile = ""
+    [string]$EnvFile = "",
+    [string]$SchemaFile = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -38,6 +45,8 @@ $scriptDir = if ($PSScriptRoot) {
     Split-Path -Parent $MyInvocation.MyCommand.Definition
 }
 if (-not $EnvFile) { $EnvFile = Join-Path $scriptDir ".env" }
+if (-not $SchemaFile) { $SchemaFile = Join-Path $scriptDir "schema.sql" }
+$SchemaFile = (Resolve-Path $SchemaFile).Path  # fails fast when missing
 
 if (-not (Test-Path $EnvFile)) {
     throw "Env file not found: $EnvFile - copy .env.example to .env and fill it in."
@@ -65,7 +74,7 @@ $service    = $vars["AMIGOACT_DB_SERVICE"];    if (-not $service)   { $service =
 $adminUser  = $vars["AMIGOACT_DB_ADMIN_USER"]; if (-not $adminUser) { $adminUser = "SYSTEM" }
 
 Write-Host "Target : ${dbHost}:${port}/${service}"
-Write-Host "Schema : $($vars['AMIGOACT_DB_USER']) (dropped & recreated)"
+Write-Host "Schema : $($vars['AMIGOACT_DB_USER']) (dropped, recreated, rebuilt from $(Split-Path -Leaf $SchemaFile))"
 Write-Host "Admin  : $adminUser (password comes from env var or a prompt, never this file)"
 
 if (-not $Force) {
@@ -87,7 +96,7 @@ foreach ($key in $vars.Keys) {
 }
 
 $helper = Join-Path $scriptDir "scripts\reset_db.py"
-$helperArgs = @()
+$helperArgs = @("--schema", $SchemaFile)
 if ($AllowRemote) { $helperArgs += "--allow-remote" }
 
 Push-Location $scriptDir

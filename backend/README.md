@@ -72,9 +72,10 @@ connection qua dependency `backend.database.get_db_connection`.
 ```
 
 Script đọc `.env`, kết nối bằng user admin, drop `AMIGOACT_DB_USER` (nếu tồn
-tại) rồi tạo lại schema trống với đủ quyền. Chỉ chạy với host local —
-`-AllowRemote` nếu thật sự cần. Không cần `docker exec`: driver thin đi qua
-`localhost:1521`.
+tại), tạo lại với đủ quyền rồi áp toàn bộ DDL trong `schema.sql` — kết quả là
+một database sạch với đủ bảng và ràng buộc. Chỉ chạy với host local —
+`-AllowRemote` nếu thật sự cần, `-SchemaFile` để áp một file DDL khác. Không
+cần `docker exec`: driver thin đi qua `localhost:1521`.
 
 Chạy không tương tác (CI/task runner) thì export trước:
 
@@ -117,7 +118,7 @@ src/backend/
 ├── api/routers/         # bề mặt HTTP: route, mã trạng thái, tag
 └── domain/              # logic nghiệp vụ thuần — không fastapi, không I/O
 scripts/
-└── reset_db.py          # drop & recreate schema — gọi bởi reset_database.ps1
+└── reset_db.py          # drop & recreate user rồi áp schema.sql — gọi bởi reset_database.ps1
 tests/
 ├── conftest.py          # fixture app / client / build_app
 ├── unit/                # một đơn vị cô lập
