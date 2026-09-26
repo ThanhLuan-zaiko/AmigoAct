@@ -28,7 +28,7 @@ cd amigoact
 # Backend
 cd backend
 uv sync --all-groups
-uv run uvicorn backend.main:app --reload     # http://localhost:8000
+uv run uvicorn backend.main:app --reload --port 8100   # http://localhost:8100
 
 # Frontend (terminal thứ hai)
 cd frontend
@@ -36,7 +36,8 @@ bun install
 bun run dev                                  # http://localhost:3000
 ```
 
-Mở <http://localhost:8000/docs> để xem giao diện OpenAPI tương tác.
+Mở <http://localhost:8100/docs> để xem giao diện OpenAPI tương tác. Backend
+dùng port 8100 vì port 8000 bị WSL port relay chiếm (container Portainer).
 
 ## Biến môi trường
 
@@ -45,7 +46,7 @@ mẫu rồi sửa — `.env` đã được git-ignore, còn `.env.example` đư�
 
 ```bash
 cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env
+cp frontend/.env.example frontend/.env.local
 ```
 
 ### Backend (tất cả đều có tiền tố `AMIGOACT_`)
@@ -64,7 +65,7 @@ cp frontend/.env.example frontend/.env
 
 | Biến | Mặc định | Ý nghĩa |
 | --- | --- | --- |
-| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | Địa chỉ gốc của API |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8100` | Địa chỉ gốc của API |
 | `PORT` | `3000` | Cổng dev server (bộ e2e dùng `3100`) |
 
 Giá trị `NEXT_PUBLIC_*` được nội tuyến thẳng vào bundle phía client lúc build.
@@ -153,9 +154,11 @@ mới, hãy thêm vào đó luôn.
 **`bun run e2e` hỏng ngay với lỗi trình duyệt.**
 Chưa cài Chromium. Chạy `bun run e2e:install` một lần.
 
-**Cổng 3000 hoặc 8000 đã bị chiếm.**
+**Cổng 3000 hoặc 8100 đã bị chiếm.**
 Dùng `PORT=3100 bun run dev` cho frontend;
-`uv run uvicorn backend.main:app --port 8100` cho backend.
+`uv run uvicorn backend.main:app --port 8200` cho backend (nhớ đổi
+`NEXT_PUBLIC_API_URL` tương ứng). Port 8000 luôn bị WSL port relay chiếm khi
+container Portainer đang chạy — không dùng 8000 cho uvicorn.
 
 **Test chạy riêng thì pass nhưng chạy đủ bộ thì fail.**
 Rò rỉ trạng thái. Backend: fixture `autouse` trong `tests/conftest.py` đã xử lý

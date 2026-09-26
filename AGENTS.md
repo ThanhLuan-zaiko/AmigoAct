@@ -21,7 +21,7 @@ Fullstack monorepo: a **FastAPI** service (`backend/`) and a **Next.js 16 App Ro
 | Lint + format | `ruff` | `biome` |
 | Types | `mypy --strict` | `tsc --noEmit` |
 | Tests | `pytest` | `vitest` (unit/integration/regression) + `playwright` (e2e) |
-| Local port | 8000 | 3000 |
+| Local port | 8100 (8000 is taken by the WSL Portainer relay) | 3000 |
 
 ## Language convention
 
@@ -79,7 +79,7 @@ Run every command from the package it belongs to.
 ```bash
 # Backend — cd backend
 uv sync --all-groups                            # install
-uv run uvicorn backend.main:app --reload        # dev server on :8000
+uv run uvicorn backend.main:app --reload --port 8100  # dev server on :8100
 uv run ruff check . && uv run ruff format .    # lint + format
 uv run ruff check --fix .                      # autofix
 uv run mypy                                    # strict type check
@@ -228,10 +228,21 @@ Full detail in [`docs/testing.md`](docs/testing.md). The rules:
   Depend on abstractions: `backend.domain` imports nothing from `backend.api`.
 - **Frontend** — `biome` owns lint and format (80 columns, double quotes, ESM
   imports). Prefer server components; add `"use client"` only when a component
-  needs state, effects, or event handlers. Keep data fetching in the server
-  layer, not in `useEffect`.
+  needs state, effects, or event handlers. **Styling is Tailwind utility
+  classes only** — no hand-written CSS rules or extra `.css` files; the single
+  exception is `app/globals.css`, which exists solely to import Tailwind.
+  **Client-side API fetching goes through TanStack Query** (`useQuery` /
+  `useMutation`, provider wired in `components/providers.tsx`) — never fetch
+  inside a bare `useEffect`. Server-rendered reads stay in Server Components.
 - **Both** — fail loudly. Raise an explicit exception with a message; never
   swallow an error to make a test pass.
+
+## Git workflow
+
+- After finishing a code change, review it with `git status` and `git diff`
+  before declaring it done.
+- Commits follow Conventional Commits and are **local only** — never run
+  `git push` unless the user explicitly asks for it.
 
 ## Definition of done
 

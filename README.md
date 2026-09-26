@@ -14,7 +14,7 @@ Monorepo fullstack: dịch vụ **FastAPI** và frontend **Next.js 16**.
 ```bash
 # Backend
 cd backend && uv sync --all-groups && cp .env.example .env
-uv run uvicorn backend.main:app --reload      # http://localhost:8000
+uv run uvicorn backend.main:app --reload --port 8100   # http://localhost:8100
 
 # Frontend
 cd frontend && bun install && cp .env.example .env
