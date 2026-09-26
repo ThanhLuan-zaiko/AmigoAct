@@ -25,6 +25,7 @@
     "check:ci": "bun run lint && bun run typecheck && bun run test:coverage && bun run build"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.103.3",
     "next": "16.3.6",
     "react": "19.2.8",
     "react-dom": "19.2.8"

@@ -10,14 +10,26 @@ cứu nhanh riêng cho package frontend.
 
 ```bash
 bun install
-cp .env.example .env
+cp .env.example .env.local
 ```
+
+`.env.local` override `.env` khi `next dev` và được git-ignore.
+`NEXT_PUBLIC_API_URL` trỏ tới backend FastAPI (mặc định
+`http://localhost:8100` — port 8000 bị WSL port relay chiếm bởi Portainer).
 
 ## Chạy
 
 ```bash
 bun run dev          # http://localhost:3000
 bun run build && bun run start
+```
+
+Khi server khởi động, `instrumentation.ts` ping `GET /api/health` của backend
+và **chỉ log** kết quả ra console — không hiển thị trên UI:
+
+```
+[api] backend reachable: http://localhost:8100/api/health (AmigoAct API v0.1.0, development)
+[api] backend unreachable: http://localhost:8100/api/health - fetch failed: connect ECONNREFUSED ...
 ```
 
 ## Bố cục

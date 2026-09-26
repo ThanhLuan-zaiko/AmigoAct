@@ -4,7 +4,8 @@
  * Values are read lazily so tests can override `process.env` between cases.
  */
 
-export const DEFAULT_API_URL = "http://localhost:8000";
+// 8000 is reserved for the WSL port relay (Portainer) in this dev setup.
+export const DEFAULT_API_URL = "http://localhost:8100";
 
 /** Absolute base URL of the AmigoAct API. */
 export function getApiUrl(): string {
