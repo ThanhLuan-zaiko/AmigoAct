@@ -1,1 +1,5 @@
 @import "tailwindcss";
+
+/* Class-based dark variant so the manual toggle can override the OS
+   preference — see docs/ui-design.md and components/theme-provider.tsx. */
+@custom-variant dark (&:where(.dark, .dark *));

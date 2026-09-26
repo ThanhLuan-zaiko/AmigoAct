@@ -22,6 +22,18 @@ export type MessageHandler = (data: unknown, envelope: SocketEnvelope) => void;
 export type StatusHandler = (status: SocketStatus) => void;
 export type ErrorHandler = (error: Error) => void;
 
+/**
+ * Close code the API uses when the `?token=` JWT is rejected. Frozen contract
+ * — pinned by `tests/regression/api-contract.test.ts`.
+ */
+export const WS_AUTH_CLOSE_CODE = 4401;
+
+/**
+ * Message reported through `onError` after a {@link WS_AUTH_CLOSE_CODE}
+ * close. Consumers match on this constant, not the literal.
+ */
+export const WS_AUTH_ERROR_MESSAGE = "WebSocket authentication rejected";
+
 export interface SocketOptions {
   /** Full `ws://`/`wss://` URL, e.g. from `wsUrl("/api/ws")`. */
   url: string;
@@ -113,8 +125,14 @@ export function createSocket(options: SocketOptions): AmigoSocket {
     };
     socket.onmessage = (event) => dispatch(event.data);
     socket.onerror = () => reportError(new Error("WebSocket transport error"));
-    socket.onclose = () => {
+    socket.onclose = (event) => {
       setStatus("closed");
+      // 4401 = the server rejected the token; reconnecting would loop on the
+      // same dead credentials, so surface it as an auth failure instead.
+      if (event.code === WS_AUTH_CLOSE_CODE) {
+        reportError(new Error(WS_AUTH_ERROR_MESSAGE));
+        return;
+      }
       if (!manualClose && reconnect) {
         attempts += 1;
         const delay = Math.min(baseDelay * 2 ** (attempts - 1), maxDelay);

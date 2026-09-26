@@ -1,69 +1,25 @@
 /**
  * Unit tests for `lib/websocket.ts` — the reusable realtime client.
- * A `FakeSocket` replaces the global `WebSocket` via `socketFactory`;
- * `vi.useFakeTimers` drives the reconnect backoff. No network is touched.
+ * `FakeSocket` (tests/helpers) replaces the global `WebSocket` via
+ * `socketFactory`; `vi.useFakeTimers` drives the reconnect backoff.
+ * No network is touched.
  *
  * Layer: **unit**
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createSocket, type SocketEnvelope } from "@/lib/websocket";
+import {
+  createSocket,
+  WS_AUTH_CLOSE_CODE,
+  WS_AUTH_ERROR_MESSAGE,
+} from "@/lib/websocket";
+import { FakeSocket } from "@/tests/helpers/fake-socket";
 
-class FakeSocket {
-  static instances: FakeSocket[] = [];
-
-  readonly url: string;
-  readyState = 0;
-  sent: string[] = [];
-  onopen: ((event: unknown) => void) | null = null;
-  onmessage: ((event: { data: unknown }) => void) | null = null;
-  onclose: ((event: { code: number }) => void) | null = null;
-  onerror: ((event: unknown) => void) | null = null;
-
-  constructor(url: string) {
-    this.url = url;
-    FakeSocket.instances.push(this);
-  }
-
-  send(data: string): void {
-    this.sent.push(data);
-  }
-
-  close(): void {
-    this.readyState = 3;
-    this.onclose?.({ code: 1000 });
-  }
-
-  simulateOpen(): void {
-    this.readyState = 1;
-    this.onopen?.({});
-  }
-
-  simulateMessage(message: SocketEnvelope): void {
-    this.onmessage?.({ data: JSON.stringify(message) });
-  }
-
-  /** An abnormal drop — the client should reconnect. */
-  simulateDrop(): void {
-    this.readyState = 3;
-    this.onclose?.({ code: 1006 });
-  }
-}
-
-function lastSocket(): FakeSocket {
-  const socket = FakeSocket.instances.at(-1);
-  if (!socket) {
-    throw new Error("no socket was created");
-  }
-  return socket;
-}
-
-function factory(url: string): WebSocket {
-  return new FakeSocket(url) as unknown as WebSocket;
-}
+const factory = FakeSocket.factory;
+const lastSocket = FakeSocket.last;
 
 beforeEach(() => {
-  FakeSocket.instances = [];
+  FakeSocket.reset();
   vi.useFakeTimers();
 });
 
@@ -183,5 +139,57 @@ describe("createSocket", () => {
 
     expect(FakeSocket.instances).toHaveLength(1);
     expect(socket.status).toBe("closed");
+  });
+});
+
+describe("authentication rejection (close code 4401)", () => {
+  it("does not reconnect and reports an auth failure", () => {
+    const socket = createSocket({
+      url: "ws://x",
+      socketFactory: factory,
+      reconnectDelayMs: 500,
+    });
+    const errors: string[] = [];
+    socket.onError((e) => errors.push(e.message));
+    socket.connect();
+    lastSocket().simulateOpen();
+
+    lastSocket().simulateClose(WS_AUTH_CLOSE_CODE);
+    vi.advanceTimersByTime(60_000);
+
+    expect(FakeSocket.instances).toHaveLength(1);
+    expect(socket.status).toBe("closed");
+    expect(errors).toEqual([WS_AUTH_ERROR_MESSAGE]);
+    expect(errors[0]).toBe("WebSocket authentication rejected");
+  });
+
+  it("still reports status as closed through onStatus", () => {
+    const socket = createSocket({ url: "ws://x", socketFactory: factory });
+    const statuses: string[] = [];
+    socket.onStatus((s) => statuses.push(s));
+    socket.connect();
+    lastSocket().simulateOpen();
+
+    lastSocket().simulateClose(WS_AUTH_CLOSE_CODE);
+
+    expect(statuses).toEqual(["connecting", "open", "closed"]);
+  });
+
+  it("keeps reconnecting for other unexpected close codes", () => {
+    const socket = createSocket({
+      url: "ws://x",
+      socketFactory: factory,
+      reconnectDelayMs: 100,
+    });
+    const errors: string[] = [];
+    socket.onError((e) => errors.push(e.message));
+    socket.connect();
+    lastSocket().simulateOpen();
+
+    lastSocket().simulateClose(1011); // server error — not an auth rejection
+    vi.advanceTimersByTime(100);
+
+    expect(FakeSocket.instances).toHaveLength(2);
+    expect(errors).toEqual([]);
   });
 });
