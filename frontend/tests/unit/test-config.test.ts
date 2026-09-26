@@ -5,7 +5,13 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 
-import { apiUrl, DEFAULT_API_URL, getApiUrl } from "@/lib/config";
+import {
+  apiUrl,
+  DEFAULT_API_URL,
+  getApiUrl,
+  getWsUrl,
+  wsUrl,
+} from "@/lib/config";
 
 afterEach(() => {
   delete process.env.NEXT_PUBLIC_API_URL;
@@ -39,5 +45,26 @@ describe("apiUrl", () => {
   it("does not double up slashes from the base", () => {
     process.env.NEXT_PUBLIC_API_URL = "https://api.amigoact.dev///";
     expect(apiUrl("/api/health")).toBe("https://api.amigoact.dev/api/health");
+  });
+});
+
+describe("getWsUrl", () => {
+  it("derives ws:// from the http API URL", () => {
+    expect(getWsUrl()).toBe("ws://localhost:8100");
+  });
+
+  it("derives wss:// from an https API URL", () => {
+    process.env.NEXT_PUBLIC_API_URL = "https://api.amigoact.dev";
+    expect(getWsUrl()).toBe("wss://api.amigoact.dev");
+  });
+});
+
+describe("wsUrl", () => {
+  it("joins a path onto the ws base", () => {
+    expect(wsUrl("/api/ws")).toBe("ws://localhost:8100/api/ws");
+  });
+
+  it("adds the missing leading slash", () => {
+    expect(wsUrl("api/ws")).toBe("ws://localhost:8100/api/ws");
   });
 });

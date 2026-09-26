@@ -32,12 +32,39 @@ và **chỉ log** kết quả ra console — không hiển thị trên UI:
 [api] backend unreachable: http://localhost:8100/api/health - fetch failed: connect ECONNREFUSED ...
 ```
 
+## Xương sống: Speculation Rules + WebSocket
+
+Điều hướng tức thì và trạng thái realtime là nền của app — hai khung tái sử
+dụng sau đây là điểm vào duy nhất:
+
+- **Speculation Rules API** — `components/speculation-rules.tsx` render
+  `<script type="speculationrules">`; builder thuần ở `lib/speculation-rules.ts`.
+  Gắn vào page khi biết route kế tiếp người dùng hay tới:
+
+  ```tsx
+  <SpeculationRules prerender={["/activities/new"]} prefetch={["/login"]} />
+  ```
+
+  `prerender` render hẳn trang đích trong frame ẩn — dùng tiết kiệm.
+- **WebSocket** — `lib/websocket.ts` `createSocket()` nối tới
+  `wsUrl("/api/ws")` (suy ra từ `NEXT_PUBLIC_API_URL`), envelope
+  `{type, data}`, handler theo type, tự reconnect backoff luỹ thừa, và gắn
+  JWT qua `?token=` khi backend bật auth:
+
+  ```ts
+  const socket = createSocket({ url: wsUrl("/api/ws"), token });
+  socket.on("announce", (data) => { /* ... */ });
+  ```
+
+Dữ liệu realtime đi qua socket này — không poll REST. Fetch một-lần vẫn qua
+TanStack Query.
+
 ## Bố cục
 
 ```
 app/           # route App Router — mặc định là server component
-components/    # component client và component hiển thị
-lib/           # hàm trợ giúp không phụ thuộc framework — không react, không next/*
+components/    # component client/hiển thị + <SpeculationRules>
+lib/           # hàm không framework — config, health, ws client, speculation builder
 tests/
 ├── unit/         # hàm thuần
 ├── integration/  # component và route được render trong jsdom

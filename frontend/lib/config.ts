@@ -20,3 +20,17 @@ export function apiUrl(path: string): string {
   const suffix = path.startsWith("/") ? path : `/${path}`;
   return `${base}${suffix}`;
 }
+
+/** WebSocket base URL derived from the API URL (`http`→`ws`, `https`→`wss`). */
+export function getWsUrl(): string {
+  return getApiUrl()
+    .replace(/^https/, "wss")
+    .replace(/^http/, "ws");
+}
+
+/** Join the WS base URL with a path, e.g. `wsUrl("/api/ws")`. */
+export function wsUrl(path: string): string {
+  const base = getWsUrl().replace(/\/+$/, "");
+  const suffix = path.startsWith("/") ? path : `/${path}`;
+  return `${base}${suffix}`;
+}
